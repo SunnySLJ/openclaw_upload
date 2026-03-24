@@ -1,0 +1,6 @@
+flash_longxia/token.txt
+**/token.txt
+__pycache__/
+*.py[cod]
+flash_longxia/output/
+**/output/*.mp4

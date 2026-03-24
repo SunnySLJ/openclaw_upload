@@ -1,0 +1,14 @@
+﻿# 复制到 flash_longxia/config.yaml 后生效（可选）
+
+base_url: "https://zhenlongxia.com/prod-api"
+
+device_verify:
+  enabled: false
+  api_path: "/api/v1/device/verify"
+
+video:
+  poll_interval: 30
+  max_wait_minutes: 30
+  download_retries: 3
+  download_retry_interval: 5
+  output_dir: "./output"
