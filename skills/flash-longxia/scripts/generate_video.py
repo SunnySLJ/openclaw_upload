@@ -5,22 +5,63 @@
 
 用法:
     python generate_video.py <图片路径> [选项]
+    python generate_video.py --list-models [--token=xxx]
     
 示例:
-    python generate_video.py image.jpg --model=auto --duration=10 --variants=1
+    python generate_video.py --list-models
+    python generate_video.py image.jpg --model=sora2-new --duration=10 --variants=1
 """
 
 import sys
 import os
 from pathlib import Path
 
+def resolve_repo_root() -> Path | None:
+    """优先从 cwd 定位仓库，其次尝试脚本目录及环境变量。"""
+    candidates = []
+
+    env_root = os.environ.get("OPENCLAW_UPLOAD_ROOT")
+    if env_root:
+        candidates.append(Path(env_root))
+
+    cwd = Path.cwd().resolve()
+    candidates.extend([cwd, *cwd.parents])
+
+    script_dir = Path(__file__).resolve().parent
+    candidates.extend([script_dir, *script_dir.parents])
+
+    for candidate in candidates:
+        workflow = candidate / "flash_longxia" / "zhenlongxia_workflow.py"
+        if workflow.exists():
+            return candidate
+    return None
+
+
+repo_root = resolve_repo_root()
+if repo_root is None:
+    print("错误：找不到 openclaw_upload 仓库根目录，请在项目目录运行或设置 OPENCLAW_UPLOAD_ROOT")
+    sys.exit(1)
+
+
+def ensure_project_venv() -> None:
+    """优先切换到仓库内的 .venv Python，避免依赖缺失。"""
+    venv_root = repo_root / ".venv"
+    venv_python = venv_root / "bin" / "python3.12"
+    if not venv_python.exists():
+        return
+
+    if Path(sys.prefix).resolve() == venv_root.resolve():
+        return
+
+    os.execv(str(venv_python), [str(venv_python), *sys.argv])
+
+
+ensure_project_venv()
+
 if sys.version_info[:2] != (3, 12):
     print(f"错误：当前 Python 版本是 {sys.version.split()[0]}，请改用 python3.12 运行")
     sys.exit(1)
 
-# 解析仓库根目录下的主工作流脚本
-script_dir = Path(__file__).parent
-repo_root = script_dir.parent.parent.parent
 workflow_path = repo_root / "flash_longxia" / "zhenlongxia_workflow.py"
 
 if not workflow_path.exists():
@@ -29,25 +70,33 @@ if not workflow_path.exists():
 
 # 导入工作流模块
 sys.path.insert(0, str(workflow_path.parent))
-from zhenlongxia_workflow import run_workflow
+from zhenlongxia_workflow import fetch_model_options, load_config, load_saved_token, print_model_options, run_workflow
 
 def main():
     if len(sys.argv) < 2:
         print("用法：python generate_video.py <图片路径> [选项]")
+        print("      python generate_video.py --list-models [--token=xxx]")
         print()
         print("选项:")
-        print("  --model=auto      模型固定为 auto")
-        print("  --duration=N      时长：10, 15, 20 (秒)")
-        print("  --aspectRatio=X   比例：16:9, 9:16, 1:1")
+        print("  --list-models     查询可用模型、时长与比例")
+        print("  --token=xxx       Token（也可写入 token.txt）")
+        print("  --model=MODEL     模型值，来自模型配置接口")
+        print("  --duration=N      时长，需匹配所选模型")
+        print("  --aspectRatio=X   比例，需匹配所选模型")
         print("  --variants=N      变体数量")
         sys.exit(1)
-    
-    image_path = sys.argv[1]
-    
+
+    image_path = None
+    list_models = False
+
     # 解析参数
     kwargs = {}
-    for arg in sys.argv[2:]:
-        if arg.startswith("--model="):
+    for arg in sys.argv[1:]:
+        if arg == "--list-models":
+            list_models = True
+        elif arg.startswith("--token="):
+            kwargs["token"] = arg.split("=", 1)[1]
+        elif arg.startswith("--model="):
             kwargs["model"] = arg.split("=", 1)[1]
         elif arg.startswith("--duration="):
             kwargs["duration"] = int(arg.split("=", 1)[1])
@@ -55,7 +104,34 @@ def main():
             kwargs["aspectRatio"] = arg.split("=", 1)[1]
         elif arg.startswith("--variants="):
             kwargs["variants"] = int(arg.split("=", 1)[1])
-    
+        elif not arg.startswith("--") and image_path is None:
+            image_path = arg
+
+    if list_models:
+        config = load_config()
+        base_url = config["base_url"].rstrip("/")
+        model_config_url = config.get("model_config_url", f"{base_url}/api/v1/globalConfig/getModel")
+        token_val = kwargs.get("token") or load_saved_token()
+        if not token_val:
+            print("错误：请将 Token 写入 flash_longxia/token.txt 或使用 --token=xxx")
+            sys.exit(1)
+
+        import requests
+
+        session = requests.Session()
+        session.headers.update({
+            "token": token_val,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        })
+        model_items = fetch_model_options(base_url, session, model_config_url=model_config_url)
+        print_model_options(model_items)
+        return
+
+    if image_path is None:
+        print("错误：缺少图片路径")
+        sys.exit(1)
+
     # 运行工作流
     try:
         task_id = run_workflow(image_path, **kwargs)

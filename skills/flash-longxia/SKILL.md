@@ -23,6 +23,7 @@ description: Use this skill when the user wants to generate a video from a stati
 ## 前置条件
 
 - `flash_longxia/token.txt` 存在，或命令行传 `--token=...`
+- 若仓库根目录存在 `.venv/bin/python3.12`，脚本会优先自动切换到该解释器
 - 生成时输入是本地图片路径
 - 下载时输入是 `generateVideo` 返回的任务 `id`
 
@@ -32,13 +33,14 @@ description: Use this skill when the user wants to generate a video from a stati
 2. 调用 `/api/v1/aiMediaGenerations/imageToText` 生成提示词
 3. 先校验提示词是否生成成功
 4. 默认先请求用户确认
-5. 只有确认且提示词成功后才调用 `/api/v1/aiMediaGenerations/generateVideo`
-6. 返回任务 ID
-7. 需要补下载时，调用 `fetch_generated_video(id=任务ID)` 查询 `getById?id=` 并下载视频
+5. 调用 `/api/v1/globalConfig/getModel?modelType=1` 获取可用模型、时长、比例，并校验所选参数
+6. 只有确认且提示词成功后才调用 `/api/v1/aiMediaGenerations/generateVideo`
+7. 返回任务 ID
+8. 需要补下载时，调用 `fetch_generated_video(id=任务ID)` 查询 `getById?id=` 并下载视频
 
 ## 视频生成参数
 
-只使用这组参数，不要再引入风格模板或画质参数：
+默认参数如下，实际 `model` / `duration` / `aspectRatio` 以模型接口返回值为准，不要再引入风格模板或画质参数：
 
 ```python
 {
@@ -61,7 +63,7 @@ description: Use this skill when the user wants to generate a video from a stati
 {
   "aspectRatio": "16:9",
   "duration": 10,
-  "model": "auto",
+  "model": "...",
   "prompt": "...",
   "urls": ["..."],
   "variants": 1
@@ -72,31 +74,35 @@ description: Use this skill when the user wants to generate a video from a stati
 
 ```bash
 cd /Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia
+python3 zhenlongxia_workflow.py --list-models
 python3 zhenlongxia_workflow.py <图片路径>
-python3 zhenlongxia_workflow.py <图片路径> --model=auto --duration=10 --aspectRatio=9:16 --variants=1
-python3 zhenlongxia_workflow.py <图片路径> --model=auto --duration=10 --aspectRatio=9:16 --variants=1 --yes
+python3 zhenlongxia_workflow.py <图片路径> --model=sora2-new --duration=10 --aspectRatio=16:9 --variants=1
+python3 zhenlongxia_workflow.py <图片路径> --model=grok_imagine --duration=10 --aspectRatio=9:16 --variants=1 --yes
 ```
 
 或：
 
 ```bash
 cd /Users/mima0000/.openclaw/workspace/openclaw_upload/skills/flash-longxia/scripts
-python3 generate_video.py <图片路径> --model=auto --duration=10 --aspectRatio=16:9 --variants=1
+python3 generate_video.py --list-models
+python3 generate_video.py <图片路径> --model=sora2-new --duration=10 --aspectRatio=16:9 --variants=1
 python3 download_video.py <任务ID>
 ```
 
 ## 约束
 
-- `model` 只允许 `auto`
+- `model` 必须来自 `/api/v1/globalConfig/getModel?modelType=1`
 - `aspectRatio` 使用驼峰写法
 - 不要使用 `style`
 - 不要使用 `quality`
 - 提示词校验失败时，不能继续生成视频
+- `duration` / `aspectRatio` 必须匹配所选模型支持项
 - 默认会在 `generateVideo` 前要求人工确认
 - 传 `--yes` 可以跳过确认
 
 ## 排错
 
 - 提示词失败：先看 `imageToText` 返回值，确认不是空串、错误文本或未解析对象
+- 模型失败：先跑 `--list-models`，确认 `model` / `duration` / `aspectRatio` 组合存在
 - 视频失败：检查 `generateVideo` 返回的任务信息
 - 下载失败：确认传入的是 `generateVideo` 返回的任务 `id`，并检查 `getById?id=` 返回内容

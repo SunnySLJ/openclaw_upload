@@ -29,6 +29,23 @@ import sys
 import time
 from pathlib import Path
 
+
+def _ensure_project_venv() -> None:
+    """优先切换到仓库内的 .venv Python，避免依赖缺失。"""
+    repo_root = Path(__file__).resolve().parent.parent
+    venv_root = repo_root / ".venv"
+    venv_python = venv_root / "bin" / "python3.12"
+    if not venv_python.exists():
+        return
+
+    if Path(sys.prefix).resolve() == venv_root.resolve():
+        return
+
+    os.execv(str(venv_python), [str(venv_python), *sys.argv])
+
+
+_ensure_project_venv()
+
 import requests
 import yaml
 
@@ -45,6 +62,7 @@ if sys.version_info[:2] != (3, 12):
 DEFAULT_CONFIG = {
     "base_url": "http://123.56.58.223:8081",
     "upload_url": "http://123.56.58.223:8081/api/v1/file/upload",
+    "model_config_url": "http://123.56.58.223:8081/api/v1/globalConfig/getModel",
     "device_verify": {
         "enabled": False,
         "api_path": "/api/v1/device/verify",
@@ -57,7 +75,7 @@ DEFAULT_CONFIG = {
         "output_dir": "./output",
         "confirm_before_generate": True,
         # 视频生成参数（可通过命令行或 config.yaml 覆盖）
-        "model": "auto",          # 模型固定为 auto
+        "model": "auto",          # 默认模型，可通过模型接口查询可选值
         "duration": 10,
         "aspectRatio": "16:9",
         "variants": 1,
@@ -141,6 +159,100 @@ def image_to_text(
     return None
 
 
+def fetch_model_options(
+    base_url: str,
+    session: requests.Session,
+    model_type: int = 1,
+    model_config_url: str | None = None,
+) -> list[dict]:
+    """获取视频模型配置列表。"""
+    url = (model_config_url or f"{base_url}/api/v1/globalConfig/getModel").rstrip("/")
+    resp = session.get(url, params={"modelType": model_type}, timeout=15)
+    data = resp.json()
+    if data.get("code") not in (200, 0):
+        raise RuntimeError(f"获取模型配置失败：{data}")
+    items = data.get("data")
+    if not isinstance(items, list):
+        raise RuntimeError(f"模型配置返回格式异常：{data}")
+    return items
+
+
+def print_model_options(model_items: list[dict]) -> None:
+    """打印模型及其支持的时长、比例。"""
+    print("可用模型:", flush=True)
+    for item in model_items:
+        model_info = item.get("model") or {}
+        model_value = str(model_info.get("value") or "").strip()
+        model_label = str(model_info.get("label") or model_value).strip()
+        if not model_value:
+            continue
+
+        durations = [
+            str(opt.get("value"))
+            for opt in item.get("time") or []
+            if opt.get("value") is not None
+        ]
+        resolutions = [
+            str(opt.get("value"))
+            for opt in item.get("resolution") or []
+            if opt.get("value")
+        ]
+        print(
+            f"  - {model_value} ({model_label})"
+            f" | durations={', '.join(durations) or '-'}"
+            f" | aspectRatios={', '.join(resolutions) or '-'}",
+            flush=True,
+        )
+
+
+def resolve_video_options(
+    *,
+    model: str,
+    duration: int,
+    aspect_ratio: str,
+    model_items: list[dict],
+) -> tuple[str, int, str]:
+    """校验并规范化模型、时长、比例。"""
+    normalized_model = str(model).strip()
+    if not normalized_model:
+        raise ValueError("model 不能为空")
+
+    target = None
+    for item in model_items:
+        model_info = item.get("model") or {}
+        if str(model_info.get("value") or "").strip() == normalized_model:
+            target = item
+            break
+
+    if target is None:
+        supported = ", ".join(
+            str((item.get("model") or {}).get("value"))
+            for item in model_items
+            if (item.get("model") or {}).get("value")
+        )
+        raise ValueError(f"不支持的 model: {normalized_model}。可选值: {supported}")
+
+    supported_durations = {
+        int(opt["value"])
+        for opt in target.get("time") or []
+        if opt.get("value") is not None
+    }
+    supported_ratios = {
+        str(opt["value"]).strip()
+        for opt in target.get("resolution") or []
+        if opt.get("value")
+    }
+
+    if supported_durations and duration not in supported_durations:
+        allowed = ", ".join(str(v) for v in sorted(supported_durations))
+        raise ValueError(f"model={normalized_model} 不支持 duration={duration}。可选值: {allowed}")
+    if supported_ratios and aspect_ratio not in supported_ratios:
+        allowed = ", ".join(sorted(supported_ratios))
+        raise ValueError(f"model={normalized_model} 不支持 aspectRatio={aspect_ratio}。可选值: {allowed}")
+
+    return normalized_model, duration, aspect_ratio
+
+
 def validate_system_prompt(system_prompt: str | None) -> tuple[bool, str]:
     """判断图生文结果是否可用于后续视频生成。"""
     if system_prompt is None:
@@ -213,9 +325,9 @@ def generate_video(
     POST generateVideo，返回任务 id。
     
     参数:
-        model: 模型固定为 auto
-        duration: 视频时长 (10, 15, 20 秒，最小 10 秒)
-        aspectRatio: 画面比例 (16:9, 9:16, 1:1)
+        model: 模型值，来源于 /api/v1/globalConfig/getModel?modelType=1
+        duration: 视频时长，需匹配所选模型支持的时长
+        aspectRatio: 画面比例，需匹配所选模型支持的比例
         variants: 生成变体数量
     """
     url = f"{base_url}/api/v1/aiMediaGenerations/generateVideo"
@@ -226,7 +338,7 @@ def generate_video(
         "duration": duration,
         "variants": variants,
     }
-    # model 参数：默认传 auto，也兼容调用方显式传空时跳过
+    # model 参数按接口配置传递，也兼容调用方显式传空时跳过
     if model:
         payload["model"] = model
     payload.update({k: v for k, v in kwargs.items() if v is not None})
@@ -471,15 +583,16 @@ def run_workflow(
     串联上述步骤；任一步失败则 sys.exit(1)。
     
     参数:
-        model: 模型固定为 auto
-        duration: 视频时长 (10, 15, 20 秒，最小 10 秒)
-        aspectRatio: 画面比例 (16:9, 9:16, 1:1)
+        model: 模型值，来源于模型配置接口；未传时使用配置默认值
+        duration: 视频时长，需匹配所选模型支持的时长
+        aspectRatio: 画面比例，需匹配所选模型支持的比例
         variants: 生成变体数量
         auto_confirm: 为 True 时跳过发起视频前的人工确认
     """
     config = load_config()
     base_url = config["base_url"].rstrip("/")
     upload_url = config.get("upload_url", f"{base_url}/api/v1/file/upload").rstrip("/")
+    model_config_url = config.get("model_config_url", f"{base_url}/api/v1/globalConfig/getModel")
     video_cfg = config.get("video", {})
 
     # 合并配置：命令行参数 > config.yaml > 默认值
@@ -501,6 +614,19 @@ def run_workflow(
         "Accept": "application/json",
     })
     print("[1/7] 使用 Token", flush=True)
+
+    try:
+        model_items = fetch_model_options(base_url, session, model_config_url=model_config_url)
+        model, duration, aspectRatio = resolve_video_options(
+            model=model,
+            duration=duration,
+            aspect_ratio=aspectRatio,
+            model_items=model_items,
+        )
+        print(f"[OK] 模型配置已确认: model={model}, duration={duration}, aspectRatio={aspectRatio}", flush=True)
+    except Exception as e:
+        print(f"[错误] 模型参数校验失败：{e}", flush=True)
+        sys.exit(1)
 
     dev_cfg = config.get("device_verify", {}) or {}
     if dev_cfg.get("enabled"):
@@ -587,13 +713,16 @@ def run_workflow(
 
 def main():
     if len(sys.argv) < 2:
-        print("用法：python zhenlongxia_workflow.py <图片路径> [选项]")
+        print("用法:")
+        print("  python zhenlongxia_workflow.py <图片路径> [选项]")
+        print("  python zhenlongxia_workflow.py --list-models [--token=xxx]")
         print()
         print("选项:")
         print("  --token=xxx          Token（也可写入 token.txt）")
-        print("  --model=auto         模型固定为 auto")
-        print("  --duration=N         视频时长：10, 15, 20 (秒，最小 10 秒)")
-        print("  --aspectRatio=XXX    画面比例：16:9, 9:16, 1:1")
+        print("  --list-models        查询可用模型、时长与比例")
+        print("  --model=MODEL        模型值，来自模型配置接口")
+        print("  --duration=N         视频时长，需匹配所选模型")
+        print("  --aspectRatio=XXX    画面比例，需匹配所选模型")
         print("  --variants=N         生成变体数量")
         print("  --yes                跳过发起视频前的人工确认")
         print("  --id=ID              按任务 ID 直接下载已生成视频")
@@ -601,14 +730,16 @@ def main():
         print()
         print("示例:")
         print("  python zhenlongxia_workflow.py ./my_image.jpg")
-        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --duration=10")
-        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --aspectRatio=9:16 --variants=1 --yes")
+        print("  python zhenlongxia_workflow.py --list-models")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=sora2-new --duration=10")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=grok_imagine --duration=10 --aspectRatio=9:16 --variants=1 --yes")
         print("  python zhenlongxia_workflow.py --id=123456")
         print("  python zhenlongxia_workflow.py --fetch-by-id=123456")
         sys.exit(1)
 
     image_path = None
     fetch_task_id = None
+    list_models = False
     token = None
     model = None
     duration = None
@@ -617,7 +748,9 @@ def main():
     auto_confirm = False
 
     for arg in sys.argv[1:]:
-        if arg.startswith("--id="):
+        if arg == "--list-models":
+            list_models = True
+        elif arg.startswith("--id="):
             fetch_task_id = arg.split("=", 1)[1]
         elif arg.startswith("--fetch-by-id="):
             fetch_task_id = arg.split("=", 1)[1]
@@ -637,6 +770,25 @@ def main():
             auto_confirm = True
         elif not arg.startswith("--") and image_path is None:
             image_path = arg
+
+    if list_models:
+        config = load_config()
+        base_url = config["base_url"].rstrip("/")
+        model_config_url = config.get("model_config_url", f"{base_url}/api/v1/globalConfig/getModel")
+        token_val = token or load_saved_token()
+        if not token_val:
+            print("错误：请将 Token 写入 flash_longxia/token.txt 或使用 --token=xxx")
+            sys.exit(1)
+
+        session = requests.Session()
+        session.headers.update({
+            "token": token_val,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        })
+        model_items = fetch_model_options(base_url, session, model_config_url=model_config_url)
+        print_model_options(model_items)
+        return
 
     if fetch_task_id:
         local_path = fetch_generated_video(task_id=fetch_task_id, token=token)

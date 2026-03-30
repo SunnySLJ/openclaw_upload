@@ -4,6 +4,7 @@
 # API 基础地址
 base_url: "http://123.56.58.223:8081"
 upload_url: "http://123.56.58.223:8081/api/v1/file/upload"
+model_config_url: "http://123.56.58.223:8081/api/v1/globalConfig/getModel"
 
 # 设备验证（可选）
 device_verify:
@@ -21,7 +22,7 @@ video:
   confirm_before_generate: true  # 发起视频前是否要求人工确认
   
   # 视频生成参数（可通过命令行覆盖）
-  model: "auto"                  # 模型固定为 auto
-  duration: 10                   # 时长：10, 15, 20 (秒，最小 10 秒)
-  aspectRatio: "16:9"            # 比例：16:9, 9:16, 1:1
+  model: "auto"                  # 默认模型，实际可选值来自 model_config_url?modelType=1
+  duration: 10                   # 时长，需匹配所选模型支持项
+  aspectRatio: "16:9"            # 比例，需匹配所选模型支持项
   variants: 1                    # 变体数量
