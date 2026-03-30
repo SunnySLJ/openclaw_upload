@@ -1,0 +1,4 @@
+interface:
+  display_name: "Flash LongXia"
+  short_description: "Generate and download Flash LongXia videos"
+  default_prompt: "Use $flash-longxia to run the repo image-to-video workflow or download a generated video by task ID."

@@ -578,6 +578,7 @@ def run_workflow(
     aspectRatio: str | None = None,
     variants: int | None = None,
     auto_confirm: bool = False,
+    prompt: str | None = None,
 ):
     """
     串联上述步骤；任一步失败则 sys.exit(1)。
@@ -588,6 +589,7 @@ def run_workflow(
         aspectRatio: 画面比例，需匹配所选模型支持的比例
         variants: 生成变体数量
         auto_confirm: 为 True 时跳过发起视频前的人工确认
+        prompt: 自定义提示词（传入后跳过图生文）
     """
     config = load_config()
     base_url = config["base_url"].rstrip("/")
@@ -644,14 +646,19 @@ def run_workflow(
         sys.exit(1)
     print(f"[OK] 图片已上传：{image_url}")
 
-    print("[4/7] 图生文获取提示词...", flush=True)
-    system_prompt = image_to_text(base_url, image_url, session)
-    prompt_ok, prompt_msg = validate_system_prompt(system_prompt)
-    if not prompt_ok:
-        print(f"[错误] 提示词生成未成功，停止视频生成：{prompt_msg}", flush=True)
-        sys.exit(1)
-    system_prompt = prompt_msg
-    print(f"[OK] 系统提示词生成成功：{system_prompt[:80]}...")
+    # [4/7] 图生文获取提示词（如果传入了自定义 prompt 则跳过）
+    if prompt:
+        print(f"[4/7] 使用自定义提示词...", flush=True)
+        system_prompt = prompt
+    else:
+        print("[4/7] 图生文获取提示词...", flush=True)
+        system_prompt = image_to_text(base_url, image_url, session)
+        prompt_ok, prompt_msg = validate_system_prompt(system_prompt)
+        if not prompt_ok:
+            print(f"[错误] 提示词生成未成功，停止视频生成：{prompt_msg}", flush=True)
+            sys.exit(1)
+        system_prompt = prompt_msg
+    print(f"[OK] 系统提示词：{system_prompt[:80]}...")
 
     if confirm_before_generate and not auto_confirm:
         if not confirm_video_generation(

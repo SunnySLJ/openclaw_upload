@@ -6,10 +6,11 @@
 用法:
     python generate_video.py <图片路径> [选项]
     python generate_video.py --list-models [--token=xxx]
-    
+
 示例:
     python generate_video.py --list-models
     python generate_video.py image.jpg --model=sora2-new --duration=10 --variants=1
+    python generate_video.py image.jpg --yes
 """
 
 import sys
@@ -17,12 +18,12 @@ import os
 from pathlib import Path
 
 def resolve_repo_root() -> Path | None:
-    """优先从 cwd 定位仓库，其次尝试脚本目录及环境变量。"""
-    candidates = []
+    """优先从 cwd、环境变量和 OpenClaw 常见目录定位仓库。"""
+    candidates: list[Path] = []
 
     env_root = os.environ.get("OPENCLAW_UPLOAD_ROOT")
     if env_root:
-        candidates.append(Path(env_root))
+        candidates.append(Path(env_root).expanduser())
 
     cwd = Path.cwd().resolve()
     candidates.extend([cwd, *cwd.parents])
@@ -30,7 +31,20 @@ def resolve_repo_root() -> Path | None:
     script_dir = Path(__file__).resolve().parent
     candidates.extend([script_dir, *script_dir.parents])
 
+    home = Path.home()
+    candidates.extend([
+        home / ".openclaw" / "workspace" / "openclaw_upload",
+        home / "Desktop" / "openclaw_upload",
+        home / "workspace" / "openclaw_upload",
+        home / "openclaw_upload",
+    ])
+
     for candidate in candidates:
+        try:
+            candidate = candidate.resolve()
+        except FileNotFoundError:
+            continue
+
         workflow = candidate / "flash_longxia" / "zhenlongxia_workflow.py"
         if workflow.exists():
             return candidate
@@ -39,7 +53,7 @@ def resolve_repo_root() -> Path | None:
 
 repo_root = resolve_repo_root()
 if repo_root is None:
-    print("错误：找不到 openclaw_upload 仓库根目录，请在项目目录运行或设置 OPENCLAW_UPLOAD_ROOT")
+    print("错误：找不到 openclaw_upload 仓库根目录，请在项目目录运行，或设置 OPENCLAW_UPLOAD_ROOT 指向包含 flash_longxia 的目录")
     sys.exit(1)
 
 
@@ -84,6 +98,7 @@ def main():
         print("  --duration=N      时长，需匹配所选模型")
         print("  --aspectRatio=X   比例，需匹配所选模型")
         print("  --variants=N      变体数量")
+        print("  --yes             跳过发起视频前的人工确认")
         sys.exit(1)
 
     image_path = None
@@ -104,6 +119,8 @@ def main():
             kwargs["aspectRatio"] = arg.split("=", 1)[1]
         elif arg.startswith("--variants="):
             kwargs["variants"] = int(arg.split("=", 1)[1])
+        elif arg == "--yes":
+            kwargs["auto_confirm"] = True
         elif not arg.startswith("--") and image_path is None:
             image_path = arg
 

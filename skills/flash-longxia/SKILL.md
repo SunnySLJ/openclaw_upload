@@ -1,108 +1,47 @@
 ---
 name: flash-longxia
-description: Use this skill when the user wants to generate a video from a static image through the zhenlongxia workflow in this repo, or download a generated video by task id.
+description: Generate videos from a static image and download completed videos for the zhenlongxia or flash_longxia workflow in this project. Use when the user asks to run this repo's image-to-video pipeline, inspect available models, submit a generation task, download a finished video by task ID, or troubleshoot flash-longxia generation and download issues.
 ---
 
 # flash-longxia
 
-将静态图片提交到真龙虾工作流发起视频生成任务，或按任务 ID 下载已生成视频。
+使用此 skill 时，优先复用 skill 自带脚本，不要重新实现上传、图生文、模型查询、生成和下载 API。
 
-## 何时使用
+## 定位仓库
 
-- 用户提到“生成视频”“图生视频”“图片转视频”“真龙虾”“flash-longxia”
-- 用户提到“下载视频”“获取视频”“按 id 下载”“补下载”
-- 需要调用本仓库的 `flash_longxia/zhenlongxia_workflow.py`
-
-## 入口
-
-- 主脚本: `/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/zhenlongxia_workflow.py`
-- 封装脚本: `/Users/mima0000/.openclaw/workspace/openclaw_upload/skills/flash-longxia/scripts/generate_video.py`
-- 下载脚本: `/Users/mima0000/.openclaw/workspace/openclaw_upload/skills/flash-longxia/scripts/download_video.py`
-- 配置文件: `/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/config.yaml`
+- 先定位包含 `flash_longxia/zhenlongxia_workflow.py` 的仓库根目录。
+- 封装脚本会优先尝试当前目录、环境变量 `OPENCLAW_UPLOAD_ROOT`、`~/Desktop/openclaw_upload` 和 `~/.openclaw/workspace/openclaw_upload`。
+- 若自动定位失败，显式设置 `OPENCLAW_UPLOAD_ROOT=/path/to/openclaw_upload` 再运行命令。
 
 ## 前置条件
 
-- `flash_longxia/token.txt` 存在，或命令行传 `--token=...`
-- 若仓库根目录存在 `.venv/bin/python3.12`，脚本会优先自动切换到该解释器
-- 生成时输入是本地图片路径
-- 下载时输入是 `generateVideo` 返回的任务 `id`
+- 使用 `python3.12`；如果仓库根目录有 `.venv/bin/python3.12`，脚本会自动切换过去。
+- 确保 `flash_longxia/config.yaml` 已准备好。
+- 确保 `flash_longxia/token.txt` 存在，或在命令中传 `--token=...`。
+- 生成任务需要本地图片路径；下载任务需要 `generateVideo` 返回的任务 ID。
 
-## 实际流程
-
-1. 上传图片到 `/api/v1/file/upload`
-2. 调用 `/api/v1/aiMediaGenerations/imageToText` 生成提示词
-3. 先校验提示词是否生成成功
-4. 默认先请求用户确认
-5. 调用 `/api/v1/globalConfig/getModel?modelType=1` 获取可用模型、时长、比例，并校验所选参数
-6. 只有确认且提示词成功后才调用 `/api/v1/aiMediaGenerations/generateVideo`
-7. 返回任务 ID
-8. 需要补下载时，调用 `fetch_generated_video(id=任务ID)` 查询 `getById?id=` 并下载视频
-
-## 视频生成参数
-
-默认参数如下，实际 `model` / `duration` / `aspectRatio` 以模型接口返回值为准，不要再引入风格模板或画质参数：
-
-```python
-{
-  "poll_interval": 30,
-  "max_wait_minutes": 30,
-  "download_retries": 3,
-  "download_retry_interval": 5,
-  "output_dir": "./output",
-  "confirm_before_generate": true,
-  "model": "auto",
-  "duration": 10,
-  "aspectRatio": "16:9",
-  "variants": 1,
-}
-```
-
-`generateVideo` 请求体固定为：
-
-```json
-{
-  "aspectRatio": "16:9",
-  "duration": 10,
-  "model": "...",
-  "prompt": "...",
-  "urls": ["..."],
-  "variants": 1
-}
-```
-
-## 命令行用法
+## 常用命令
 
 ```bash
-cd /Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia
-python3 zhenlongxia_workflow.py --list-models
-python3 zhenlongxia_workflow.py <图片路径>
-python3 zhenlongxia_workflow.py <图片路径> --model=sora2-new --duration=10 --aspectRatio=16:9 --variants=1
-python3 zhenlongxia_workflow.py <图片路径> --model=grok_imagine --duration=10 --aspectRatio=9:16 --variants=1 --yes
+python3 scripts/generate_video.py --list-models [--token=...]
+python3 scripts/generate_video.py <image-path> [--model=...] [--duration=10] [--aspectRatio=16:9] [--variants=1] [--token=...]
+python3 scripts/generate_video.py <image-path> --yes [--token=...]
+python3 scripts/download_video.py <task-id> [--token=...]
 ```
 
-或：
+## 执行规则
 
-```bash
-cd /Users/mima0000/.openclaw/workspace/openclaw_upload/skills/flash-longxia/scripts
-python3 generate_video.py --list-models
-python3 generate_video.py <图片路径> --model=sora2-new --duration=10 --aspectRatio=16:9 --variants=1
-python3 download_video.py <任务ID>
-```
-
-## 约束
-
-- `model` 必须来自 `/api/v1/globalConfig/getModel?modelType=1`
-- `aspectRatio` 使用驼峰写法
-- 不要使用 `style`
-- 不要使用 `quality`
-- 提示词校验失败时，不能继续生成视频
-- `duration` / `aspectRatio` 必须匹配所选模型支持项
-- 默认会在 `generateVideo` 前要求人工确认
-- 传 `--yes` 可以跳过确认
+- 先用 `--list-models` 获取可用 `model`、`duration` 和 `aspectRatio`。
+- 只传后端模型接口支持的 `model`、`duration`、`aspectRatio` 组合。
+- 保持参数名 `aspectRatio` 为驼峰写法。
+- 不要向请求体加入 `style` 或 `quality`。
+- 图生文失败或提示词校验失败时，立即停止，不要继续发起生成。
+- 默认保留人工确认；只有明确需要无人值守时才传 `--yes`。
+- 生成成功后返回任务 ID；补下载时调用 `scripts/download_video.py`，不要重写查询逻辑。
 
 ## 排错
 
-- 提示词失败：先看 `imageToText` 返回值，确认不是空串、错误文本或未解析对象
-- 模型失败：先跑 `--list-models`，确认 `model` / `duration` / `aspectRatio` 组合存在
-- 视频失败：检查 `generateVideo` 返回的任务信息
-- 下载失败：确认传入的是 `generateVideo` 返回的任务 `id`，并检查 `getById?id=` 返回内容
+- 模型参数报错时，先重新执行 `--list-models`。
+- 找不到仓库时，检查 `OPENCLAW_UPLOAD_ROOT` 是否指向包含 `flash_longxia/` 的目录。
+- Token 报错时，检查 `flash_longxia/token.txt` 或显式传 `--token=...`。
+- 下载失败时，确认传入的是生成接口返回的任务 ID，而不是其他业务字段。
