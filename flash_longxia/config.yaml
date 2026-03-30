@@ -1,23 +1,18 @@
 # 帧龙虾 配置文件
-# 复制到 config.yaml 后生效
 
-# API 基础地址
 base_url: "http://123.56.58.223:8081"
 upload_url: "http://123.56.58.223:8081/api/v1/file/upload"
 
-# 设备验证（可选）
 device_verify:
   enabled: false
   api_path: "/api/v1/device/verify"
 
-# 视频生成参数
 video:
-  # 轮询设置
-  poll_interval: 30              # 轮询间隔（秒）
-  max_wait_minutes: 30           # 最长等待时间（分钟）
-  download_retries: 3            # 下载重试次数
-  download_retry_interval: 5     # 下载重试间隔（秒）
-  output_dir: "./output"         # 输出目录
+  poll_interval: 30
+  max_wait_minutes: 30
+  download_retries: 3
+  download_retry_interval: 5
+  output_dir: "./output"
   
   # 视频生成参数（可通过命令行覆盖）
   model: "auto"                  # 模型固定为 auto

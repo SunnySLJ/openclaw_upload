@@ -5,7 +5,8 @@
 from pathlib import Path
 import requests
 
-BASE = "https://zhenlongxia.com/prod-api"
+BASE = "http://123.56.58.223:8081"
+UPLOAD_URL = "http://123.56.58.223:8081/api/v1/file/upload"
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0",
@@ -14,7 +15,7 @@ session.headers.update({
 
 
 def step1_upload(image_path: str):
-    url = f"{BASE}/api/v1/file/upload"
+    url = UPLOAD_URL
     with open(image_path, "rb") as f:
         files = {"file": (Path(image_path).name, f)}
         r = session.post(url, files=files, timeout=30)

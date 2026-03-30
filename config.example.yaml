@@ -1,6 +1,7 @@
 ﻿# 复制到 flash_longxia/config.yaml 后生效（可选）
 
-base_url: "https://zhenlongxia.com/prod-api"
+base_url: "http://123.56.58.223:8081"
+upload_url: "http://123.56.58.223:8081/api/v1/file/upload"
 
 device_verify:
   enabled: false
@@ -12,3 +13,7 @@ video:
   download_retries: 3
   download_retry_interval: 5
   output_dir: "./output"
+  model: "auto"
+  duration: 10
+  aspectRatio: "16:9"
+  variants: 1

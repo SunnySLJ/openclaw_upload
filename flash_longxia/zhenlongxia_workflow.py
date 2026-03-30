@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -*- utf-8 -*-
 """
 帧龙虾 图片生成视频 完整工作流
 ============================
@@ -15,6 +15,10 @@
 
 前置条件：将站点返回的 Token 写入与本脚本同目录的 token.txt，
 或通过命令行 --token=xxx 传入。
+
+新增功能（v2.0）：
+  - 支持命令行参数选择模型、风格、时长、画质、画面比例
+  - 支持 config.yaml 配置默认参数
 """
 
 from __future__ import annotations
@@ -32,17 +36,23 @@ import yaml
 # 默认配置（可被同目录 config.yaml 覆盖，键合并规则见 load_config）
 # ---------------------------------------------------------------------------
 DEFAULT_CONFIG = {
-    "base_url": "https://zhenlongxia.com/prod-api",
+    "base_url": "http://123.56.58.223:8081",
+    "upload_url": "http://123.56.58.223:8081/api/v1/file/upload",
     "device_verify": {
-        "enabled": False,  # True 时先调 device_verify 模块校验本机 MAC
+        "enabled": False,
         "api_path": "/api/v1/device/verify",
     },
     "video": {
-        "poll_interval": 30,  # 秒：每次查询 getById 的间隔
-        "max_wait_minutes": 30,  # 最长等待；超时则放弃下载
-        "download_retries": 3,  # 下载失败后的重试次数
-        "download_retry_interval": 5,  # 下载重试间隔（秒）
-        "output_dir": "./output",  # 相对本脚本所在目录
+        "poll_interval": 30,
+        "max_wait_minutes": 30,
+        "download_retries": 3,
+        "download_retry_interval": 5,
+        "output_dir": "./output",
+        # 视频生成参数（可通过命令行或 config.yaml 覆盖）
+        "model": "auto",          # 模型固定为 auto
+        "duration": 10,
+        "aspectRatio": "16:9",
+        "variants": 1,
     },
 }
 
@@ -65,7 +75,7 @@ def load_config():
 
 
 # ---------------------------------------------------------------------------
-# Token：与站点约定为 HTTP 头 token: <字符串>，非 Bearer
+# Token
 # ---------------------------------------------------------------------------
 TOKEN_FILE = Path(__file__).parent / "token.txt"
 
@@ -79,12 +89,12 @@ def load_saved_token() -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# API 封装（与 debug_apis.py 逻辑保持一致，便于单独调试对比）
+# API 封装
 # ---------------------------------------------------------------------------
 
-def upload_image(base_url: str, image_path: str, session: requests.Session) -> str | None:
-    """POST /api/v1/file/upload，返回图片可访问 URL（字符串或 data.url）。"""
-    url = f"{base_url}/api/v1/file/upload"
+def upload_image(upload_url: str, image_path: str, session: requests.Session) -> str | None:
+    """POST 上传接口，返回图片可访问 URL。"""
+    url = upload_url.rstrip("/")
     with open(image_path, "rb") as f:
         files = {"file": (os.path.basename(image_path), f)}
         resp = session.post(url, files=files, timeout=30)
@@ -95,7 +105,7 @@ def upload_image(base_url: str, image_path: str, session: requests.Session) -> s
             return d
         if isinstance(d, dict):
             return d.get("url") or d.get("fileUrl") or d.get("path")
-    print(f"[错误] 上传失败: {data}")
+    print(f"[错误] 上传失败：{data}")
     return None
 
 
@@ -119,8 +129,45 @@ def image_to_text(
             return d
         if isinstance(d, dict):
             return d.get("systemPrompt") or d.get("prompt") or d.get("text") or str(d)
-    print(f"[错误] 图生文失败: {data}")
+    print(f"[错误] 图生文失败：{data}")
     return None
+
+
+def validate_system_prompt(system_prompt: str | None) -> tuple[bool, str]:
+    """判断图生文结果是否可用于后续视频生成。"""
+    if system_prompt is None:
+        return False, "图生文接口未返回提示词"
+
+    prompt = system_prompt.strip()
+    if not prompt:
+        return False, "图生文接口返回了空提示词"
+
+    lowered = prompt.lower()
+    invalid_markers = (
+        "图生文失败",
+        "image_to_text failed",
+        "generate failed",
+        "error",
+        "failed",
+        "exception",
+        "traceback",
+        '"code":',
+        "'code':",
+        '"msg":',
+        "'msg':",
+        '"error":',
+        "'error':",
+    )
+    if any(marker in lowered for marker in invalid_markers):
+        return False, f"图生文返回内容疑似错误信息：{prompt[:120]}"
+
+    if prompt.startswith("{") and prompt.endswith("}"):
+        return False, f"图生文返回了未解析对象：{prompt[:120]}"
+
+    if len(prompt) < 10:
+        return False, f"图生文返回内容过短：{prompt}"
+
+    return True, prompt
 
 
 def generate_video(
@@ -128,19 +175,32 @@ def generate_video(
     image_url: str,
     system_prompt: str,
     session: requests.Session,
-    aspect_ratio: str = "16:9",
+    aspectRatio: str = "16:9",
     duration: int = 10,
+    model: str = "auto",
+    variants: int = 1,
     **kwargs,
 ) -> str | None:
-    """POST generateVideo，返回任务 id（用于后续 getById 轮询）。"""
+    """
+    POST generateVideo，返回任务 id。
+    
+    参数:
+        model: 模型固定为 auto
+        duration: 视频时长 (10, 15, 20 秒，最小 10 秒)
+        aspectRatio: 画面比例 (16:9, 9:16, 1:1)
+        variants: 生成变体数量
+    """
     url = f"{base_url}/api/v1/aiMediaGenerations/generateVideo"
     payload = {
-        "referenceImageUrls": [image_url],
+        "urls": [image_url],
         "prompt": system_prompt,
-        "systemPrompt": system_prompt,
-        "aspectRatio": aspect_ratio,
+        "aspectRatio": aspectRatio,
         "duration": duration,
+        "variants": variants,
     }
+    # model 参数：默认传 auto，也兼容调用方显式传空时跳过
+    if model:
+        payload["model"] = model
     payload.update({k: v for k, v in kwargs.items() if v is not None})
     resp = session.post(url, json=payload, timeout=30)
     data = resp.json()
@@ -151,12 +211,12 @@ def generate_video(
         if isinstance(d, dict):
             return str(d.get("id") or d.get("groupNo") or d.get("taskId") or d)
         return str(d) if d else None
-    print(f"[错误] 生成视频失败: {data}")
+    print(f"[错误] 生成视频失败：{data}")
     return None
 
 
 def fetch_video_by_id(base_url: str, session: requests.Session, video_id: str) -> dict | None:
-    """GET getById?id=，成功时返回 data 字典（含 status、mediaUrl 等）。"""
+    """GET getById?id=，成功时返回 data 字典。"""
     url = f"{base_url}/api/v1/aiMediaGenerations/getById"
     try:
         resp = session.get(url, params={"id": video_id}, timeout=15)
@@ -168,30 +228,20 @@ def fetch_video_by_id(base_url: str, session: requests.Session, video_id: str) -
         return None
 
 
-# 与后端约定：完成态 / 失败态（见接口文档或抓包确认）
 _STATUS_SUCCESS = ("2", 2, "completed", "success", "SUCCESS")
 _STATUS_FAILED = ("3", 3, "failed", "FAILED", "error", "ERROR")
 _STATUS_LABELS = {
-    "0": "排队中",
-    0: "排队中",
-    "1": "生成中",
-    1: "生成中",
-    "2": "已完成",
-    2: "已完成",
-    "3": "已失败",
-    3: "已失败",
-    "completed": "已完成",
-    "success": "已完成",
-    "SUCCESS": "已完成",
-    "failed": "已失败",
-    "FAILED": "已失败",
-    "error": "已失败",
-    "ERROR": "已失败",
+    "0": "排队中", 0: "排队中",
+    "1": "生成中", 1: "生成中",
+    "2": "已完成", 2: "已完成",
+    "3": "已失败", 3: "已失败",
+    "completed": "已完成", "success": "已完成", "SUCCESS": "已完成",
+    "failed": "已失败", "FAILED": "已失败", "error": "已失败", "ERROR": "已失败",
 }
 
 
 def _build_status_text(record: dict) -> str:
-    """构建轮询日志里的状态文本，方便快速判断任务进度。"""
+    """构建轮询日志里的状态文本。"""
     status = record.get("status") or record.get("videoStatus") or record.get("taskStatus")
     status_label = _STATUS_LABELS.get(status, "处理中")
     req_msg = record.get("reqMsg") or ""
@@ -200,10 +250,7 @@ def _build_status_text(record: dict) -> str:
 
 
 def _extract_video_url_from_rep_msg(record: dict) -> str | None:
-    """
-    兼容某些后端场景：
-    顶层 status 仍是处理中，但 repMsg(JSON 字符串)里已经有 result 视频链接。
-    """
+    """兼容 repMsg 中包含 result 视频链接的场景。"""
     rep_msg = record.get("repMsg")
     if not rep_msg or not isinstance(rep_msg, str):
         return None
@@ -229,11 +276,7 @@ def poll_video_status(
     poll_interval: int = 30,
     max_wait_minutes: int = 30,
 ) -> tuple[dict | None, str]:
-    """
-    轮询直到：成功返回整条记录；失败/超时返回 None。
-    处理中状态继续 sleep poll_interval 秒。
-    返回 (record, reason)，reason in {"success", "failed", "timeout"}。
-    """
+    """轮询直到成功/失败/超时。"""
     max_elapsed = max_wait_minutes * 60
     elapsed = 0
     attempt = 0
@@ -245,11 +288,11 @@ def poll_video_status(
             record = fetch_video_by_id(base_url, session, task_id)
             if record:
                 status = record.get("status") or record.get("videoStatus") or record.get("taskStatus")
-                print(f"[轮询] 第{attempt}次: {_build_status_text(record)}", flush=True)
+                print(f"[轮询] 第{attempt}次：{_build_status_text(record)}", flush=True)
                 rep_video_url = _extract_video_url_from_rep_msg(record)
                 if rep_video_url:
                     record["mediaUrl"] = record.get("mediaUrl") or rep_video_url
-                    print(f"[轮询] 第{attempt}次: repMsg 已包含成片链接，直接进入下载", flush=True)
+                    print(f"[轮询] 第{attempt}次：repMsg 已包含成片链接，直接进入下载", flush=True)
                     return record, "success"
                 if status in _STATUS_SUCCESS:
                     print(f"[轮询] 视频已完成 id={task_id}", flush=True)
@@ -259,9 +302,9 @@ def poll_video_status(
                     print(f"[错误] 视频生成失败 status={status}, msg={msg}, record={record}", flush=True)
                     return None, "failed"
             else:
-                print(f"[轮询] 第{attempt}次: 暂无数据（接口返回空 data）", flush=True)
+                print(f"[轮询] 第{attempt}次：暂无数据（接口返回空 data）", flush=True)
         except Exception as e:
-            print(f"[轮询] 第 {attempt} 次异常: {e}", flush=True)
+            print(f"[轮询] 第 {attempt} 次异常：{e}", flush=True)
 
         remaining = max_elapsed - elapsed
         sleep_sec = min(poll_interval, remaining)
@@ -276,7 +319,7 @@ def poll_video_status(
 
 
 def get_video_url(record: dict) -> str | None:
-    """从 getById 的 data 里取可下载的视频地址（字段名以实际返回为准）。"""
+    """从 getById 的 data 里取可下载的视频地址。"""
     return (
         record.get("videoUrl")
         or record.get("mediaUrl")
@@ -314,10 +357,10 @@ def download_video(
         except Exception as e:
             last_err = e
             if i < attempts:
-                print(f"[下载] 第{i}次失败，{retry_interval}s 后重试: {e}", flush=True)
+                print(f"[下载] 第{i}次失败，{retry_interval}s 后重试：{e}", flush=True)
                 time.sleep(max(1, retry_interval))
 
-    raise RuntimeError(f"下载失败，已重试 {attempts} 次: {last_err}")
+    raise RuntimeError(f"下载失败，已重试 {attempts} 次：{last_err}")
 
 
 # ---------------------------------------------------------------------------
@@ -328,11 +371,30 @@ def run_workflow(
     image_path: str,
     *,
     token: str | None = None,
+    model: str | None = None,
+    duration: int | None = None,
+    aspectRatio: str | None = None,
+    variants: int | None = None,
 ):
-    """串联上述步骤；任一步失败则 sys.exit(1)。"""
+    """
+    串联上述步骤；任一步失败则 sys.exit(1)。
+    
+    参数:
+        model: 模型固定为 auto
+        duration: 视频时长 (10, 15, 20 秒，最小 10 秒)
+        aspectRatio: 画面比例 (16:9, 9:16, 1:1)
+        variants: 生成变体数量
+    """
     config = load_config()
     base_url = config["base_url"].rstrip("/")
+    upload_url = config.get("upload_url", f"{base_url}/api/v1/file/upload").rstrip("/")
     video_cfg = config.get("video", {})
+
+    # 合并配置：命令行参数 > config.yaml > 默认值
+    model = model if model is not None else video_cfg.get("model", "")
+    duration = duration if duration is not None else video_cfg.get("duration", 10)
+    aspectRatio = aspectRatio or video_cfg.get("aspectRatio", "16:9")
+    variants = variants if variants is not None else video_cfg.get("variants", 1)
 
     token_val = token or load_saved_token()
     if not token_val:
@@ -347,13 +409,10 @@ def run_workflow(
     })
     print("[1/7] 使用 Token", flush=True)
 
-    # 可选：设备 MAC + 权限接口（实现见 device_verify.py）
     dev_cfg = config.get("device_verify", {}) or {}
     if dev_cfg.get("enabled"):
         import device_verify
-        if not device_verify.run_device_verify(
-            base_url, session, api_path=dev_cfg.get("api_path")
-        ):
+        if not device_verify.run_device_verify(base_url, session, api_path=dev_cfg.get("api_path")):
             print("[错误] 设备未授权，无法继续", flush=True)
             sys.exit(1)
         print("[2/7] 设备验证通过", flush=True)
@@ -361,19 +420,28 @@ def run_workflow(
         print("[2/7] 跳过设备验证（未启用）", flush=True)
 
     print("[3/7] 上传图片...", flush=True)
-    image_url = upload_image(base_url, image_path, session)
+    image_url = upload_image(upload_url, image_path, session)
     if not image_url:
         sys.exit(1)
-    print(f"[OK] 图片已上传: {image_url}")
+    print(f"[OK] 图片已上传：{image_url}")
 
     print("[4/7] 图生文获取提示词...", flush=True)
     system_prompt = image_to_text(base_url, image_url, session)
-    if not system_prompt:
+    prompt_ok, prompt_msg = validate_system_prompt(system_prompt)
+    if not prompt_ok:
+        print(f"[错误] 提示词生成未成功，停止视频生成：{prompt_msg}", flush=True)
         sys.exit(1)
-    print(f"[OK] 系统提示词: {system_prompt[:80]}...")
+    system_prompt = prompt_msg
+    print(f"[OK] 系统提示词生成成功：{system_prompt[:80]}...")
 
-    print("[5/7] 发起视频生成...", flush=True)
-    task_id = generate_video(base_url, image_url, system_prompt, session)
+    print(f"[5/7] 发起视频生成... (model={model}, duration={duration}s, aspectRatio={aspectRatio}, variants={variants})", flush=True)
+    task_id = generate_video(
+        base_url, image_url, system_prompt, session,
+        aspectRatio=aspectRatio,
+        duration=duration,
+        model=model,
+        variants=variants,
+    )
     if not task_id:
         sys.exit(1)
     print(f"[OK] 任务 ID: {task_id}")
@@ -407,14 +475,25 @@ def run_workflow(
         retries=video_cfg.get("download_retries", 3),
         retry_interval=video_cfg.get("download_retry_interval", 5),
     )
-    print(f"[完成] 视频已保存: {local_path}")
+    print(f"[完成] 视频已保存：{local_path}")
     return local_path
 
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python zhenlongxia_workflow.py <图片路径> [--token=xxx]")
-        print("示例: python zhenlongxia_workflow.py ./my_image.jpg")
+        print("用法：python zhenlongxia_workflow.py <图片路径> [选项]")
+        print()
+        print("选项:")
+        print("  --token=xxx          Token（也可写入 token.txt）")
+        print("  --model=auto         模型固定为 auto")
+        print("  --duration=N         视频时长：10, 15, 20 (秒，最小 10 秒)")
+        print("  --aspectRatio=XXX    画面比例：16:9, 9:16, 1:1")
+        print("  --variants=N         生成变体数量")
+        print()
+        print("示例:")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --duration=10")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --aspectRatio=9:16 --variants=1")
         sys.exit(1)
 
     image_path = sys.argv[1]
@@ -423,15 +502,36 @@ def main():
         if alt.exists():
             image_path = str(alt)
         else:
-            print(f"错误: 文件不存在 {image_path}")
+            print(f"错误：文件不存在 {image_path}")
             sys.exit(1)
 
+    # 解析命令行参数
     token = None
+    model = None
+    duration = None
+    aspectRatio = None
+    variants = None
+
     for arg in sys.argv[2:]:
         if arg.startswith("--token="):
             token = arg.split("=", 1)[1]
+        elif arg.startswith("--model="):
+            model = arg.split("=", 1)[1]
+        elif arg.startswith("--duration="):
+            duration = int(arg.split("=", 1)[1])
+        elif arg.startswith("--aspectRatio="):
+            aspectRatio = arg.split("=", 1)[1]
+        elif arg.startswith("--variants="):
+            variants = int(arg.split("=", 1)[1])
 
-    run_workflow(image_path, token=token)
+    run_workflow(
+        image_path,
+        token=token,
+        model=model,
+        duration=duration,
+        aspectRatio=aspectRatio,
+        variants=variants,
+    )
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import requests
 
-BASE = "https://zhenlongxia.com/prod-api"
+BASE = "http://123.56.58.223:8081"
 TOKEN_FILE = Path(__file__).parent / "token.txt"
 OUTPUT_DIR = Path(__file__).parent / "output"
 
