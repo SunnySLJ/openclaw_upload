@@ -32,6 +32,13 @@ from pathlib import Path
 import requests
 import yaml
 
+if sys.version_info[:2] != (3, 12):
+    print(
+        f"[错误] 当前 Python 版本是 {sys.version.split()[0]}，本项目强制使用 Python 3.12，请改用 python3.12 运行。",
+        flush=True,
+    )
+    sys.exit(1)
+
 # ---------------------------------------------------------------------------
 # 默认配置（可被同目录 config.yaml 覆盖，键合并规则见 load_config）
 # ---------------------------------------------------------------------------
@@ -350,6 +357,15 @@ def get_video_url(record: dict) -> str | None:
     )
 
 
+def resolve_task_id(task_id: str | None = None, **kwargs) -> str | None:
+    """兼容 task_id / traceid / traeid 等不同入参命名。"""
+    candidate = task_id or kwargs.get("traeid") or kwargs.get("traceid") or kwargs.get("id")
+    if candidate is None:
+        return None
+    normalized = str(candidate).strip()
+    return normalized or None
+
+
 def download_video(
     video_url: str,
     output_dir: str,
@@ -361,7 +377,7 @@ def download_video(
     """流式下载 MP4 到本地，返回绝对路径。"""
     os.makedirs(output_dir, exist_ok=True)
     if not filename:
-        filename = f"video_{int(time.time())}.mp4"
+        filename = "video.mp4"
     path = os.path.join(output_dir, filename)
     req = session.get if session else requests.get
     attempts = max(1, retries)
@@ -382,6 +398,59 @@ def download_video(
                 time.sleep(max(1, retry_interval))
 
     raise RuntimeError(f"下载失败，已重试 {attempts} 次：{last_err}")
+
+
+def fetch_generated_video(
+    *,
+    task_id: str | None = None,
+    token: str | None = None,
+    base_url: str | None = None,
+    output_dir: str | None = None,
+    filename: str | None = None,
+    **kwargs,
+) -> str:
+    """按任务 ID 查询并下载已生成视频，兼容外部传 traeid。"""
+    config = load_config()
+    video_cfg = config.get("video", {})
+    resolved_task_id = resolve_task_id(task_id, **kwargs)
+    if not resolved_task_id:
+        raise ValueError("缺少任务 ID，请传 task_id 或 traeid")
+
+    token_val = token or load_saved_token()
+    if not token_val:
+        raise ValueError("请将 Token 写入 flash_longxia/token.txt 或显式传入 token")
+
+    resolved_base_url = (base_url or config["base_url"]).rstrip("/")
+    resolved_output_dir = output_dir or video_cfg.get("output_dir", "./output")
+    resolved_filename = filename or f"{resolved_task_id}.mp4"
+
+    session = requests.Session()
+    session.headers.update({
+        "token": token_val,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+    })
+
+    record = fetch_video_by_id(resolved_base_url, session, resolved_task_id)
+    if not record:
+        raise RuntimeError(f"未查询到任务 {resolved_task_id} 的视频信息")
+
+    video_url = get_video_url(record)
+    if not video_url:
+        rep_video_url = _extract_video_url_from_rep_msg(record)
+        if rep_video_url:
+            video_url = rep_video_url
+    if not video_url:
+        raise RuntimeError(f"任务 {resolved_task_id} 暂无可下载视频地址: {record}")
+
+    return download_video(
+        video_url,
+        resolved_output_dir,
+        filename=resolved_filename,
+        session=session,
+        retries=video_cfg.get("download_retries", 3),
+        retry_interval=video_cfg.get("download_retry_interval", 5),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -527,23 +596,19 @@ def main():
         print("  --aspectRatio=XXX    画面比例：16:9, 9:16, 1:1")
         print("  --variants=N         生成变体数量")
         print("  --yes                跳过发起视频前的人工确认")
+        print("  --fetch-by-id=ID     按任务 ID 直接下载已生成视频")
+        print("  --traeid=ID          按外部传入的 traeid 直接下载已生成视频")
         print()
         print("示例:")
         print("  python zhenlongxia_workflow.py ./my_image.jpg")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --duration=10")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --aspectRatio=9:16 --variants=1 --yes")
+        print("  python zhenlongxia_workflow.py --fetch-by-id=123456")
+        print("  python zhenlongxia_workflow.py --traeid=123456")
         sys.exit(1)
 
-    image_path = sys.argv[1]
-    if not os.path.isfile(image_path):
-        alt = Path(__file__).parent / os.path.basename(image_path)
-        if alt.exists():
-            image_path = str(alt)
-        else:
-            print(f"错误：文件不存在 {image_path}")
-            sys.exit(1)
-
-    # 解析命令行参数
+    image_path = None
+    fetch_task_id = None
     token = None
     model = None
     duration = None
@@ -551,8 +616,12 @@ def main():
     variants = None
     auto_confirm = False
 
-    for arg in sys.argv[2:]:
-        if arg.startswith("--token="):
+    for arg in sys.argv[1:]:
+        if arg.startswith("--fetch-by-id="):
+            fetch_task_id = arg.split("=", 1)[1]
+        elif arg.startswith("--traeid="):
+            fetch_task_id = arg.split("=", 1)[1]
+        elif arg.startswith("--token="):
             token = arg.split("=", 1)[1]
         elif arg.startswith("--model="):
             model = arg.split("=", 1)[1]
@@ -564,6 +633,25 @@ def main():
             variants = int(arg.split("=", 1)[1])
         elif arg == "--yes":
             auto_confirm = True
+        elif not arg.startswith("--") and image_path is None:
+            image_path = arg
+
+    if fetch_task_id:
+        local_path = fetch_generated_video(task_id=fetch_task_id, token=token)
+        print(f"[完成] 视频已保存：{local_path}")
+        return
+
+    if not image_path:
+        print("错误：缺少图片路径，或请使用 --fetch-by-id=ID / --traeid=ID")
+        sys.exit(1)
+
+    if not os.path.isfile(image_path):
+        alt = Path(__file__).parent / os.path.basename(image_path)
+        if alt.exists():
+            image_path = str(alt)
+        else:
+            print(f"错误：文件不存在 {image_path}")
+            sys.exit(1)
 
     run_workflow(
         image_path,

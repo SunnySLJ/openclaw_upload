@@ -9,54 +9,22 @@
 """
 
 import sys
-import time
-from pathlib import Path
 
-import requests
+if sys.version_info[:2] != (3, 12):
+    print(f"[错误] 当前 Python 版本是 {sys.version.split()[0]}，请改用 python3.12 运行。")
+    sys.exit(1)
 
-BASE = "http://123.56.58.223:8081"
-TOKEN_FILE = Path(__file__).parent / "token.txt"
-OUTPUT_DIR = Path(__file__).parent / "output"
+from zhenlongxia_workflow import fetch_generated_video
 
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python download_latest_video.py <视频id>")
+        print("用法: python download_latest_video.py <视频id|traeid>")
         return
 
     video_id = sys.argv[1]
-    if not TOKEN_FILE.exists():
-        print("请将 Token 放入 token.txt")
-        return
-
-    tok = TOKEN_FILE.read_text(encoding="utf-8").strip()
-    session = requests.Session()
-    session.headers.update({"token": tok, "Accept": "application/json"})
-
-    r = session.get(f"{BASE}/api/v1/aiMediaGenerations/getById", params={"id": video_id}, timeout=15)
-    d = r.json()
-    if d.get("code") not in (200, 0):
-        print(f"接口返回 {d.get('code')}: {d.get('msg')}")
-        return
-
-    data = d.get("data")
-    if not data or not isinstance(data, dict):
-        print("无视频数据")
-        return
-
-    url = data.get("videoUrl") or data.get("mediaUrl") or data.get("url") or data.get("videoPath") or data.get("path")
-    if not url:
-        print("无法解析视频 URL:", data)
-        return
-
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    path = OUTPUT_DIR / f"video_{video_id}_{int(time.time())}.mp4"
-    resp = session.get(url, stream=True, timeout=60)
-    resp.raise_for_status()
-    with open(path, "wb") as f:
-        for chunk in resp.iter_content(8192):
-            f.write(chunk)
-    print(f"已保存: {path.resolve()}")
+    path = fetch_generated_video(traeid=video_id)
+    print(f"已保存: {path}")
 
 
 if __name__ == "__main__":

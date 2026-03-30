@@ -14,6 +14,10 @@ import sys
 import os
 from pathlib import Path
 
+if sys.version_info[:2] != (3, 12):
+    print(f"错误：当前 Python 版本是 {sys.version.split()[0]}，请改用 python3.12 运行")
+    sys.exit(1)
+
 # 添加父目录到路径
 script_dir = Path(__file__).parent
 workflow_path = script_dir.parent.parent / "flash_longxia" / "zhenlongxia_workflow.py"

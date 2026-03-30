@@ -89,7 +89,7 @@ def poll_task(task_info, session):
                 print(f"[完成] 任务 {task_id} 已完成！")
                 video_url = get_video_url(record)
                 if video_url:
-                    filename = f"video_{task_id}_{int(time.time())}.mp4"
+                    filename = f"{task_id}.mp4"
                     video_path = download_video(video_url, str(OUTPUT_DIR), filename, session)
                     notify_user(video_path, task_info)
                     return True
