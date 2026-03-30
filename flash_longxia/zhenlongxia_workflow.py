@@ -358,8 +358,8 @@ def get_video_url(record: dict) -> str | None:
 
 
 def resolve_task_id(task_id: str | None = None, **kwargs) -> str | None:
-    """兼容 task_id / traceid / traeid 等不同入参命名。"""
-    candidate = task_id or kwargs.get("traeid") or kwargs.get("traceid") or kwargs.get("id")
+    """统一解析任务 ID，兼容旧的别名入参。"""
+    candidate = task_id or kwargs.get("id") or kwargs.get("traceid") or kwargs.get("traeid")
     if candidate is None:
         return None
     normalized = str(candidate).strip()
@@ -409,12 +409,12 @@ def fetch_generated_video(
     filename: str | None = None,
     **kwargs,
 ) -> str:
-    """按任务 ID 查询并下载已生成视频，兼容外部传 traeid。"""
+    """按任务 ID 查询并下载已生成视频。"""
     config = load_config()
     video_cfg = config.get("video", {})
     resolved_task_id = resolve_task_id(task_id, **kwargs)
     if not resolved_task_id:
-        raise ValueError("缺少任务 ID，请传 task_id 或 traeid")
+        raise ValueError("缺少任务 ID，请传 task_id 或 id")
 
     token_val = token or load_saved_token()
     if not token_val:
@@ -596,15 +596,15 @@ def main():
         print("  --aspectRatio=XXX    画面比例：16:9, 9:16, 1:1")
         print("  --variants=N         生成变体数量")
         print("  --yes                跳过发起视频前的人工确认")
-        print("  --fetch-by-id=ID     按任务 ID 直接下载已生成视频")
-        print("  --traeid=ID          按外部传入的 traeid 直接下载已生成视频")
+        print("  --id=ID              按任务 ID 直接下载已生成视频")
+        print("  --fetch-by-id=ID     按任务 ID 直接下载已生成视频（兼容旧参数）")
         print()
         print("示例:")
         print("  python zhenlongxia_workflow.py ./my_image.jpg")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --duration=10")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --aspectRatio=9:16 --variants=1 --yes")
+        print("  python zhenlongxia_workflow.py --id=123456")
         print("  python zhenlongxia_workflow.py --fetch-by-id=123456")
-        print("  python zhenlongxia_workflow.py --traeid=123456")
         sys.exit(1)
 
     image_path = None
@@ -617,7 +617,9 @@ def main():
     auto_confirm = False
 
     for arg in sys.argv[1:]:
-        if arg.startswith("--fetch-by-id="):
+        if arg.startswith("--id="):
+            fetch_task_id = arg.split("=", 1)[1]
+        elif arg.startswith("--fetch-by-id="):
             fetch_task_id = arg.split("=", 1)[1]
         elif arg.startswith("--traeid="):
             fetch_task_id = arg.split("=", 1)[1]
@@ -642,7 +644,7 @@ def main():
         return
 
     if not image_path:
-        print("错误：缺少图片路径，或请使用 --fetch-by-id=ID / --traeid=ID")
+        print("错误：缺少图片路径，或请使用 --id=ID")
         sys.exit(1)
 
     if not os.path.isfile(image_path):

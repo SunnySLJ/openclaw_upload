@@ -19,11 +19,11 @@ from zhenlongxia_workflow import fetch_generated_video
 
 def main():
     if len(sys.argv) < 2:
-        print("用法: python download_latest_video.py <视频id|traeid>")
+        print("用法: python download_latest_video.py <视频id>")
         return
 
     video_id = sys.argv[1]
-    path = fetch_generated_video(traeid=video_id)
+    path = fetch_generated_video(id=video_id)
     print(f"已保存: {path}")
 
 

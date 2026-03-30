@@ -13,8 +13,8 @@
 1) 准备 token：放到 `flash_longxia/token.txt`
 2) 运行主流程：
    `python3.12 flash_longxia/zhenlongxia_workflow.py <图片路径>`
-3) 若外部已拿到生成任务 ID（例如传入 `traeid`），可直接补下载：
-   `python3.12 flash_longxia/zhenlongxia_workflow.py --traeid=<任务ID>`
+3) 若外部已拿到生成任务 ID，可直接补下载：
+   `python3.12 flash_longxia/zhenlongxia_workflow.py --id=<任务ID>`
    `python3.12 flash_longxia/download_latest_video.py <任务ID>`
 
 ## 说明

@@ -18,9 +18,10 @@ if sys.version_info[:2] != (3, 12):
     print(f"错误：当前 Python 版本是 {sys.version.split()[0]}，请改用 python3.12 运行")
     sys.exit(1)
 
-# 添加父目录到路径
+# 解析仓库根目录下的主工作流脚本
 script_dir = Path(__file__).parent
-workflow_path = script_dir.parent.parent / "flash_longxia" / "zhenlongxia_workflow.py"
+repo_root = script_dir.parent.parent.parent
+workflow_path = repo_root / "flash_longxia" / "zhenlongxia_workflow.py"
 
 if not workflow_path.exists():
     print(f"错误：找不到工作流脚本 {workflow_path}")
@@ -57,8 +58,8 @@ def main():
     
     # 运行工作流
     try:
-        video_path = run_workflow(image_path, **kwargs)
-        print(f"\n✅ 视频生成完成：{video_path}")
+        task_id = run_workflow(image_path, **kwargs)
+        print(f"\n已提交视频生成任务，任务 ID：{task_id}")
     except SystemExit as e:
         sys.exit(e.code)
     except Exception as e:
