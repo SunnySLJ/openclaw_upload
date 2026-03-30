@@ -2,45 +2,46 @@
 
 OUTPUT_DIR="/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output"
 STATE_FILE="/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/.monitor_state.json"
+TIMEOUT_SECONDS=1800  # 30 分钟
+CHECK_INTERVAL=60     # 60 秒
 
-echo "🎬 视频监控启动..."
+# 获取当前已知的最新文件
+KNOWN_FILE=$(cat "$STATE_FILE" 2>/dev/null | grep -o '"latest_file": *"[^"]*"' | cut -d'"' -f4)
+echo "初始已知文件：$KNOWN_FILE"
+
+START_TIME=$(date +%s)
 
 while true; do
-    # 获取当前最新的视频文件
-    LATEST_VIDEO=$(ls -t "$OUTPUT_DIR"/*.mp4 2>/dev/null | head -1)
+    CURRENT_TIME=$(date +%s)
+    ELAPSED=$((CURRENT_TIME - START_TIME))
     
-    if [ -z "$LATEST_VIDEO" ]; then
-        echo "⏳ 暂无视频文件..."
-        sleep 60
-        continue
+    # 检查是否超时
+    if [ $ELAPSED -ge $TIMEOUT_SECONDS ]; then
+        echo "超时，发送通知"
+        # 发送超时通知
+        openclaw message send --target="webchat" --message="视频生成超时，已放弃"
+        exit 0
     fi
     
-    LATEST_FILENAME=$(basename "$LATEST_VIDEO")
+    # 查找最新的 mp4 文件
+    LATEST_FILE=$(ls -t "$OUTPUT_DIR"/*.mp4 2>/dev/null | head -1 | xargs basename 2>/dev/null)
     
-    # 读取当前 state
-    CURRENT_STATE=$(cat "$STATE_FILE" 2>/dev/null)
-    NOTIFIED_FILE=$(echo "$CURRENT_STATE" | grep -o '"latest_file": *"[^"]*"' | cut -d'"' -f4)
-    
-    echo "📁 最新视频：$LATEST_FILENAME"
-    echo "📋 已通知：$NOTIFIED_FILE"
-    
-    # 如果发现新视频
-    if [ "$LATEST_FILENAME" != "$NOTIFIED_FILE" ]; then
-        echo "✨ 发现新视频！发送通知..."
+    if [ -n "$LATEST_FILE" ] && [ "$LATEST_FILE" != "$KNOWN_FILE" ]; then
+        echo "发现新视频：$LATEST_FILE"
+        VIDEO_PATH="$OUTPUT_DIR/$LATEST_FILE"
         
-        # 使用 openclaw message 发送通知
-        openclaw message send \
-            --target "openclaw-weixin" \
-            --message "🎬 视频生成完成：$LATEST_FILENAME" \
-            --media "$LATEST_VIDEO"
+        # 发送通知
+        openclaw message send --target="webchat" --message="🎬 视频生成完成"
+        openclaw message send --target="webchat" --media="$VIDEO_PATH"
         
-        # 更新 state 文件
-        echo "{\"latest_file\": \"$LATEST_FILENAME\", \"notified\": true}" > "$STATE_FILE"
+        # 更新状态文件
+        echo "{\"latest_file\": \"$LATEST_FILE\", \"notified\": true}" > "$STATE_FILE"
+        KNOWN_FILE="$LATEST_FILE"
         
-        echo "✅ 通知已发送，state 已更新"
-    else
-        echo "⏸️  无新视频，继续监控..."
+        # 重置超时计时器（发现新视频后重新开始计时）
+        START_TIME=$(date +%s)
     fi
     
-    sleep 60
+    echo "检查完成，等待 ${CHECK_INTERVAL} 秒..."
+    sleep $CHECK_INTERVAL
 done

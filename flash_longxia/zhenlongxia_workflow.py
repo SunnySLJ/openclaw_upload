@@ -48,6 +48,7 @@ DEFAULT_CONFIG = {
         "download_retries": 3,
         "download_retry_interval": 5,
         "output_dir": "./output",
+        "confirm_before_generate": True,
         # 视频生成参数（可通过命令行或 config.yaml 覆盖）
         "model": "auto",          # 模型固定为 auto
         "duration": 10,
@@ -168,6 +169,26 @@ def validate_system_prompt(system_prompt: str | None) -> tuple[bool, str]:
         return False, f"图生文返回内容过短：{prompt}"
 
     return True, prompt
+
+
+def confirm_video_generation(
+    prompt: str,
+    *,
+    model: str,
+    duration: int,
+    aspectRatio: str,
+    variants: int,
+) -> bool:
+    """在发起 generateVideo 前请求用户确认。"""
+    preview = prompt.replace("\n", " ").strip()
+    if len(preview) > 160:
+        preview = f"{preview[:160]}..."
+
+    print("[确认] 即将调用 generateVideo", flush=True)
+    print(f"[确认] 参数: model={model}, duration={duration}, aspectRatio={aspectRatio}, variants={variants}", flush=True)
+    print(f"[确认] 提示词预览: {preview}", flush=True)
+    answer = input("[确认] 是否继续生成视频？输入 y 继续，其他任意键取消: ").strip().lower()
+    return answer in {"y", "yes"}
 
 
 def generate_video(
@@ -375,6 +396,7 @@ def run_workflow(
     duration: int | None = None,
     aspectRatio: str | None = None,
     variants: int | None = None,
+    auto_confirm: bool = False,
 ):
     """
     串联上述步骤；任一步失败则 sys.exit(1)。
@@ -384,6 +406,7 @@ def run_workflow(
         duration: 视频时长 (10, 15, 20 秒，最小 10 秒)
         aspectRatio: 画面比例 (16:9, 9:16, 1:1)
         variants: 生成变体数量
+        auto_confirm: 为 True 时跳过发起视频前的人工确认
     """
     config = load_config()
     base_url = config["base_url"].rstrip("/")
@@ -395,6 +418,7 @@ def run_workflow(
     duration = duration if duration is not None else video_cfg.get("duration", 10)
     aspectRatio = aspectRatio or video_cfg.get("aspectRatio", "16:9")
     variants = variants if variants is not None else video_cfg.get("variants", 1)
+    confirm_before_generate = video_cfg.get("confirm_before_generate", True)
 
     token_val = token or load_saved_token()
     if not token_val:
@@ -434,6 +458,17 @@ def run_workflow(
     system_prompt = prompt_msg
     print(f"[OK] 系统提示词生成成功：{system_prompt[:80]}...")
 
+    if confirm_before_generate and not auto_confirm:
+        if not confirm_video_generation(
+            system_prompt,
+            model=model,
+            duration=duration,
+            aspectRatio=aspectRatio,
+            variants=variants,
+        ):
+            print("[已取消] 用户未确认，停止发起视频生成", flush=True)
+            sys.exit(0)
+
     print(f"[5/7] 发起视频生成... (model={model}, duration={duration}s, aspectRatio={aspectRatio}, variants={variants})", flush=True)
     task_id = generate_video(
         base_url, image_url, system_prompt, session,
@@ -445,38 +480,40 @@ def run_workflow(
     if not task_id:
         sys.exit(1)
     print(f"[OK] 任务 ID: {task_id}")
+    print("[完成] 已提交视频生成任务，后续轮询与下载交由其他人处理", flush=True)
+    return task_id
 
-    poll_int = video_cfg.get("poll_interval", 30)
-    max_wait = video_cfg.get("max_wait_minutes", 30)
-    print(f"[6/7] 轮询 getById(id={task_id}): 每{poll_int}s 查一次，最多等 {max_wait} 分钟", flush=True)
-    record, reason = poll_video_status(
-        base_url, session, task_id,
-        poll_interval=poll_int,
-        max_wait_minutes=max_wait,
-    )
-    if not record:
-        if reason == "failed":
-            print("[错误] 任务状态已失败，停止后续下载")
-        else:
-            print("[错误] 轮询超时，未获取到可下载视频")
-        sys.exit(1)
-
-    video_url = get_video_url(record)
-    if not video_url:
-        print("[错误] 无法解析视频 URL:", record)
-        sys.exit(1)
-
-    print("[7/7] 下载视频...", flush=True)
-    output_dir = video_cfg.get("output_dir", "./output")
-    local_path = download_video(
-        video_url,
-        output_dir,
-        session=session,
-        retries=video_cfg.get("download_retries", 3),
-        retry_interval=video_cfg.get("download_retry_interval", 5),
-    )
-    print(f"[完成] 视频已保存：{local_path}")
-    return local_path
+    # poll_int = video_cfg.get("poll_interval", 30)
+    # max_wait = video_cfg.get("max_wait_minutes", 30)
+    # print(f"[6/7] 轮询 getById(id={task_id}): 每{poll_int}s 查一次，最多等 {max_wait} 分钟", flush=True)
+    # record, reason = poll_video_status(
+    #     base_url, session, task_id,
+    #     poll_interval=poll_int,
+    #     max_wait_minutes=max_wait,
+    # )
+    # if not record:
+    #     if reason == "failed":
+    #         print("[错误] 任务状态已失败，停止后续下载")
+    #     else:
+    #         print("[错误] 轮询超时，未获取到可下载视频")
+    #     sys.exit(1)
+    #
+    # video_url = get_video_url(record)
+    # if not video_url:
+    #     print("[错误] 无法解析视频 URL:", record)
+    #     sys.exit(1)
+    #
+    # print("[7/7] 下载视频...", flush=True)
+    # output_dir = video_cfg.get("output_dir", "./output")
+    # local_path = download_video(
+    #     video_url,
+    #     output_dir,
+    #     session=session,
+    #     retries=video_cfg.get("download_retries", 3),
+    #     retry_interval=video_cfg.get("download_retry_interval", 5),
+    # )
+    # print(f"[完成] 视频已保存：{local_path}")
+    # return local_path
 
 
 def main():
@@ -489,11 +526,12 @@ def main():
         print("  --duration=N         视频时长：10, 15, 20 (秒，最小 10 秒)")
         print("  --aspectRatio=XXX    画面比例：16:9, 9:16, 1:1")
         print("  --variants=N         生成变体数量")
+        print("  --yes                跳过发起视频前的人工确认")
         print()
         print("示例:")
         print("  python zhenlongxia_workflow.py ./my_image.jpg")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --duration=10")
-        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --aspectRatio=9:16 --variants=1")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg --model=auto --aspectRatio=9:16 --variants=1 --yes")
         sys.exit(1)
 
     image_path = sys.argv[1]
@@ -511,6 +549,7 @@ def main():
     duration = None
     aspectRatio = None
     variants = None
+    auto_confirm = False
 
     for arg in sys.argv[2:]:
         if arg.startswith("--token="):
@@ -523,6 +562,8 @@ def main():
             aspectRatio = arg.split("=", 1)[1]
         elif arg.startswith("--variants="):
             variants = int(arg.split("=", 1)[1])
+        elif arg == "--yes":
+            auto_confirm = True
 
     run_workflow(
         image_path,
@@ -531,6 +572,7 @@ def main():
         duration=duration,
         aspectRatio=aspectRatio,
         variants=variants,
+        auto_confirm=auto_confirm,
     )
 
 

@@ -18,6 +18,7 @@ video:
   download_retries: 3            # 下载重试次数
   download_retry_interval: 5     # 下载重试间隔（秒）
   output_dir: "./output"         # 输出目录
+  confirm_before_generate: true  # 发起视频前是否要求人工确认
   
   # 视频生成参数（可通过命令行覆盖）
   model: "auto"                  # 模型固定为 auto
