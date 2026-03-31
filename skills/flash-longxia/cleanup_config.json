@@ -1,0 +1,62 @@
+{
+  "_comment": "文件清理配置 - 控制各类文件的自动清理行为",
+  
+  "enabled": true,
+  
+  "output_cleanup": {
+    "_comment": "视频输出目录清理配置",
+    
+    "enabled": true,
+    "_comment_enabled": "是否启用自动清理",
+    
+    "schedule": "0 1 * * 2",
+    "_comment_schedule": "Cron 表达式：每周二凌晨 1 点执行（分 时 日 月 周）",
+    
+    "timezone": "Asia/Shanghai",
+    "_comment_timezone": "时区",
+    
+    "keep_days": 7,
+    "_comment_keep_days": "保留最近 N 天的视频文件",
+    
+    "delete_method": "trash",
+    "_comment_delete_method": "删除方式：trash(移到回收站，可恢复) 或 delete(永久删除)",
+    
+    "dry_run": false,
+    "_comment_dry_run": "试运行模式：true=只打印不删除，false=实际删除",
+    
+    "notify_after_cleanup": true,
+    "_comment_notify_after_cleanup": "清理完成后是否通知用户"
+  },
+  
+  "screenshot_cleanup": {
+    "_comment": "截图文件清理配置（登录二维码等）",
+    
+    "enabled": true,
+    "_comment_enabled": "是否启用自动清理",
+    
+    "delete_after_scan": true,
+    "_comment_delete_after_scan": "用户回复"扫完了"后自动删除截图",
+    
+    "auto_delete_timeout_hours": 24,
+    "_comment_auto_delete_timeout_hours": "超过 N 小时未删除的截图自动清理",
+    
+    "cleanup_patterns": [
+      "logs/auth_qr/*_login_qr.png",
+      "/tmp/screenshot*.png"
+    ],
+    "_comment_cleanup_patterns": "需要清理的截图文件路径模式"
+  },
+  
+  "temp_file_cleanup": {
+    "_comment": "临时文件清理配置",
+    
+    "enabled": true,
+    "_comment_enabled": "是否启用自动清理",
+    
+    "cleanup_on_startup": true,
+    "_comment_cleanup_on_startup": "启动时清理临时文件",
+    
+    "max_age_hours": 24,
+    "_comment_max_age_hours": "清理超过 N 小时的临时文件"
+  }
+}

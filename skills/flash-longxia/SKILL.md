@@ -1,6 +1,6 @@
 ---
 name: flash-longxia
-description: Generate videos from a static image and download completed videos for the zhenlongxia or flash_longxia workflow in this project. Use when the user asks to run this repo's image-to-video pipeline, inspect available models, submit a generation task, download a finished video by task ID, or troubleshoot flash-longxia generation and download issues.
+description: Generate one video from 1 to 4 local images and query or download completed videos for the zhenlongxia or flash_longxia workflow in this project. Use when the user asks to run this repo's image-to-video pipeline, inspect available models, submit a generation task with up to 4 images, query a task by ID, download a finished video by task ID, or troubleshoot flash-longxia generation and download issues.
 ---
 
 # flash-longxia
@@ -18,15 +18,17 @@ description: Generate videos from a static image and download completed videos f
 - 使用 `python3.12`；如果仓库根目录有 `.venv/bin/python3.12`，脚本会自动切换过去。
 - 确保 `flash_longxia/config.yaml` 已准备好。
 - 确保 `flash_longxia/token.txt` 存在，或在命令中传 `--token=...`。
-- 生成任务需要本地图片路径；下载任务需要 `generateVideo` 返回的任务 ID。
+- 生成任务支持传 1 到 4 张本地图片路径，并生成 1 个视频；查询/下载任务需要 `generateVideo` 返回的任务 ID。
 
 ## 常用命令
 
 ```bash
 python3 scripts/generate_video.py --list-models [--token=...]
 python3 scripts/generate_video.py <image-path> [--model=...] [--duration=10] [--aspectRatio=16:9] [--variants=1] [--token=...]
+python3 scripts/generate_video.py <image1> <image2> [image3] [image4] [--model=...] [--duration=10] [--aspectRatio=16:9] [--variants=1] [--token=...]
 python3 scripts/generate_video.py <image-path> --yes [--token=...]
 python3 scripts/download_video.py <task-id> [--token=...]
+python3 scripts/download_video.py <task-id> --check-only [--token=...]
 ```
 
 ## 执行规则
@@ -37,7 +39,20 @@ python3 scripts/download_video.py <task-id> [--token=...]
 - 不要向请求体加入 `style` 或 `quality`。
 - 图生文失败或提示词校验失败时，立即停止，不要继续发起生成。
 - 默认保留人工确认；只有明确需要无人值守时才传 `--yes`。
-- 生成成功后返回任务 ID；补下载时调用 `scripts/download_video.py`，不要重写查询逻辑。
+- 生成成功后返回任务 ID；查询或补下载时调用 `scripts/download_video.py`，不要重写查询逻辑。
+- 多图模式下，最多传 4 张本地图片。脚本会逐张上传，然后将这 1 到 4 个远程图片 URL 一起传给 `generateVideo`，最终仍只生成 1 个视频；图生文默认只使用第 1 张图片。
+- 如果传入超过 4 张图片，应主动报错，不要继续提交任务。
+- 发起生成前，必须在日志中打印本次实际提交的图片 URL 列表，便于核对多图输入是否完整。
+- 查询 `getById` 时，不要只看顶层 `status`。如果顶层 `mediaUrl` 已存在，或 `repMsg.data.status=2` / `repMsg.data.result` 已返回成片链接，也应视为已完成。
+- 任务查询、补下载和轮询统一复用仓库里的 `flash_longxia/zhenlongxia_workflow.py`。
+
+## ⚠️ 超时处理硬性规定
+
+- **单个视频任务最多等待 30 分钟（从提交任务开始计时）**
+- **超时后必须放弃任务，停止轮询**
+- **超时后必须通知用户任务失败，说明原因**
+- 通知内容需包含：任务 ID、开始时间、超时时间、最终状态、失败原因
+- 询问用户是否需要重新生成该任务
 
 ## 排错
 
@@ -45,3 +60,4 @@ python3 scripts/download_video.py <task-id> [--token=...]
 - 找不到仓库时，检查 `OPENCLAW_UPLOAD_ROOT` 是否指向包含 `flash_longxia/` 的目录。
 - Token 报错时，检查 `flash_longxia/token.txt` 或显式传 `--token=...`。
 - 下载失败时，确认传入的是生成接口返回的任务 ID，而不是其他业务字段。
+- 如果 `getById` 返回顶层 `status=1`，但已有 `mediaUrl` 或 `repMsg.data.status=2`，这是后端状态未同步，不是下载脚本故障。

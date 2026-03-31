@@ -1,0 +1,56 @@
+{
+  "_comment": "通知配置 - 控制各种事件的通知行为",
+  
+  "enabled": true,
+  
+  "wechat": {
+    "enabled": true,
+    "_comment": "微信通知开关",
+    
+    "notify_on_task_complete": true,
+    "_comment_notify_on_task_complete": "视频生成完成时通知（附带视频文件）",
+    
+    "notify_on_publish_success": true,
+    "_comment_notify_on_publish_success": "发布成功时通知（汇总各平台结果）",
+    
+    "notify_on_publish_failed": true,
+    "_comment_notify_on_publish_failed": "发布失败时通知（说明失败原因）",
+    
+    "notify_on_token_expired": true,
+    "_comment_notify_on_token_expired": "Token 过期时通知",
+    
+    "notify_on_login_expired": true,
+    "_comment_notify_on_login_expired": "平台登录失效时通知（附带二维码）",
+    
+    "notify_on_task_timeout": true,
+    "_comment_notify_on_task_timeout": "任务超时（30 分钟未完成）时通知",
+    
+    "notify_on_error": true,
+    "_comment_notify_on_error": "发生错误时通知"
+  },
+  
+  "feishu": {
+    "enabled": false,
+    "_comment": "飞书通知开关（可选，用于视频发布完成后的通知）",
+    
+    "app_id": "cli_a949faf892355bcd",
+    "_comment_app_id": "飞书应用 App ID",
+    
+    "app_secret": "ouC7oZbnO160jO8zTDTUWET8kCj7vR3N",
+    "_comment_app_secret": "飞书应用 App Secret"
+  },
+  
+  "notification_template": {
+    "task_complete": "🦐 视频生成完成！\n任务 ID: {task_id}\n时长：{duration}秒\n文件：{file_path}",
+    "_comment_task_complete": "视频生成完成通知模板",
+    
+    "publish_success": "🦐 发布成功！\n平台：{platform}\n标题：{title}\n链接：{url}",
+    "_comment_publish_success": "发布成功通知模板",
+    
+    "publish_failed": "❌ 发布失败\n平台：{platform}\n原因：{reason}",
+    "_comment_publish_failed": "发布失败通知模板",
+    
+    "login_expired": "🔐 登录失效\n平台：{platform}\n请扫描二维码重新登录",
+    "_comment_login_expired": "登录失效通知模板"
+  }
+}

@@ -159,6 +159,20 @@ def image_to_text(
     return None
 
 
+def normalize_image_paths(image_paths: str | list[str] | tuple[str, ...]) -> list[str]:
+    """统一图片入参，兼容单张和多张本地图片路径。"""
+    if isinstance(image_paths, str):
+        candidates = [image_paths]
+    else:
+        candidates = list(image_paths)
+    normalized = [str(item).strip() for item in candidates if str(item).strip()]
+    if not normalized:
+        raise ValueError("至少需要传入一张图片路径")
+    if len(normalized) > 4:
+        raise ValueError(f"最多只支持 4 张图片，当前传入 {len(normalized)} 张")
+    return normalized
+
+
 def fetch_model_options(
     base_url: str,
     session: requests.Session,
@@ -312,7 +326,7 @@ def confirm_video_generation(
 
 def generate_video(
     base_url: str,
-    image_url: str,
+    image_urls: str | list[str] | tuple[str, ...],
     system_prompt: str,
     session: requests.Session,
     aspectRatio: str = "16:9",
@@ -331,8 +345,9 @@ def generate_video(
         variants: 生成变体数量
     """
     url = f"{base_url}/api/v1/aiMediaGenerations/generateVideo"
+    normalized_urls = normalize_image_paths(image_urls)
     payload = {
-        "urls": [image_url],
+        "urls": normalized_urls,
         "prompt": system_prompt,
         "aspectRatio": aspectRatio,
         "duration": duration,
@@ -384,13 +399,19 @@ def _build_status_text(record: dict) -> str:
     """构建轮询日志里的状态文本。"""
     status = record.get("status") or record.get("videoStatus") or record.get("taskStatus")
     status_label = _STATUS_LABELS.get(status, "处理中")
+    rep_status = _extract_rep_status(record)
+    rep_status_label = _STATUS_LABELS.get(rep_status, "未知") if rep_status is not None else "无"
     req_msg = record.get("reqMsg") or ""
     rep_msg = record.get("repMsg") or record.get("message") or record.get("msg") or record.get("errorMsg") or ""
-    return f"status={status}({status_label}), reqMsg={req_msg}, repMsg={rep_msg}"
+    return (
+        f"topStatus={status}({status_label}), "
+        f"repStatus={rep_status}({rep_status_label}), "
+        f"reqMsg={req_msg}, repMsg={rep_msg}"
+    )
 
 
-def _extract_video_url_from_rep_msg(record: dict) -> str | None:
-    """兼容 repMsg 中包含 result 视频链接的场景。"""
+def _parse_rep_msg(record: dict) -> dict | None:
+    """解析 getById 中的 repMsg JSON。"""
     rep_msg = record.get("repMsg")
     if not rep_msg or not isinstance(rep_msg, str):
         return None
@@ -398,10 +419,26 @@ def _extract_video_url_from_rep_msg(record: dict) -> str | None:
         parsed = json.loads(rep_msg)
     except Exception:
         return None
-    data = parsed.get("data") if isinstance(parsed, dict) else None
-    if not isinstance(data, dict):
+    if not isinstance(parsed, dict):
         return None
-    result = data.get("result")
+    data = parsed.get("data")
+    return data if isinstance(data, dict) else None
+
+
+def _extract_rep_status(record: dict) -> str | int | None:
+    """提取 repMsg 中的下游任务状态。"""
+    rep_data = _parse_rep_msg(record)
+    if not rep_data:
+        return None
+    return rep_data.get("status")
+
+
+def _extract_video_url_from_rep_msg(record: dict) -> str | None:
+    """兼容 repMsg 中包含 result 视频链接的场景。"""
+    rep_data = _parse_rep_msg(record)
+    if not rep_data:
+        return None
+    result = rep_data.get("result")
     if isinstance(result, list) and result:
         first = result[0]
         if isinstance(first, str) and first.startswith("http"):
@@ -428,18 +465,26 @@ def poll_video_status(
             record = fetch_video_by_id(base_url, session, task_id)
             if record:
                 status = record.get("status") or record.get("videoStatus") or record.get("taskStatus")
+                rep_status = _extract_rep_status(record)
                 print(f"[轮询] 第{attempt}次：{_build_status_text(record)}", flush=True)
+                direct_video_url = get_video_url(record)
+                if direct_video_url:
+                    print(f"[轮询] 第{attempt}次：已拿到视频地址，顶层状态未必同步，直接进入下载", flush=True)
+                    return record, "success"
                 rep_video_url = _extract_video_url_from_rep_msg(record)
                 if rep_video_url:
                     record["mediaUrl"] = record.get("mediaUrl") or rep_video_url
-                    print(f"[轮询] 第{attempt}次：repMsg 已包含成片链接，直接进入下载", flush=True)
+                    print(f"[轮询] 第{attempt}次：repMsg 已包含成片链接，顶层状态未必同步，直接进入下载", flush=True)
                     return record, "success"
-                if status in _STATUS_SUCCESS:
+                if status in _STATUS_SUCCESS or rep_status in _STATUS_SUCCESS:
                     print(f"[轮询] 视频已完成 id={task_id}", flush=True)
                     return record, "success"
-                if status in _STATUS_FAILED:
+                if status in _STATUS_FAILED or rep_status in _STATUS_FAILED:
                     msg = record.get("msg") or record.get("message") or record.get("errorMsg", "")
-                    print(f"[错误] 视频生成失败 status={status}, msg={msg}, record={record}", flush=True)
+                    print(
+                        f"[错误] 视频生成失败 topStatus={status}, repStatus={rep_status}, msg={msg}, record={record}",
+                        flush=True,
+                    )
                     return None, "failed"
             else:
                 print(f"[轮询] 第{attempt}次：暂无数据（接口返回空 data）", flush=True)
@@ -547,13 +592,21 @@ def fetch_generated_video(
     if not record:
         raise RuntimeError(f"未查询到任务 {resolved_task_id} 的视频信息")
 
+    top_status = record.get("status") or record.get("videoStatus") or record.get("taskStatus")
+    rep_status = _extract_rep_status(record)
     video_url = get_video_url(record)
     if not video_url:
         rep_video_url = _extract_video_url_from_rep_msg(record)
         if rep_video_url:
             video_url = rep_video_url
+    if not video_url and (top_status in _STATUS_FAILED or rep_status in _STATUS_FAILED):
+        raise RuntimeError(
+            f"任务 {resolved_task_id} 已失败: topStatus={top_status}, repStatus={rep_status}, record={record}"
+        )
     if not video_url:
-        raise RuntimeError(f"任务 {resolved_task_id} 暂无可下载视频地址: {record}")
+        raise RuntimeError(
+            f"任务 {resolved_task_id} 暂无可下载视频地址: topStatus={top_status}, repStatus={rep_status}, record={record}"
+        )
 
     return download_video(
         video_url,
@@ -570,7 +623,7 @@ def fetch_generated_video(
 # ---------------------------------------------------------------------------
 
 def run_workflow(
-    image_path: str,
+    image_path: str | list[str] | tuple[str, ...],
     *,
     token: str | None = None,
     model: str | None = None,
@@ -640,19 +693,28 @@ def run_workflow(
     else:
         print("[2/7] 跳过设备验证（未启用）", flush=True)
 
-    print("[3/7] 上传图片...", flush=True)
-    image_url = upload_image(upload_url, image_path, session)
-    if not image_url:
+    try:
+        local_image_paths = normalize_image_paths(image_path)
+    except ValueError as e:
+        print(f"[错误] {e}", flush=True)
         sys.exit(1)
-    print(f"[OK] 图片已上传：{image_url}")
+
+    print(f"[3/7] 上传图片... 共 {len(local_image_paths)} 张", flush=True)
+    image_urls: list[str] = []
+    for idx, current_path in enumerate(local_image_paths, start=1):
+        image_url = upload_image(upload_url, current_path, session)
+        if not image_url:
+            sys.exit(1)
+        image_urls.append(image_url)
+        print(f"[OK] 第{idx}/{len(local_image_paths)}张图片已上传：{image_url}", flush=True)
 
     # [4/7] 图生文获取提示词（如果传入了自定义 prompt 则跳过）
     if prompt:
         print(f"[4/7] 使用自定义提示词...", flush=True)
         system_prompt = prompt
     else:
-        print("[4/7] 图生文获取提示词...", flush=True)
-        system_prompt = image_to_text(base_url, image_url, session)
+        print("[4/7] 图生文获取提示词... (默认使用第1张图片)", flush=True)
+        system_prompt = image_to_text(base_url, image_urls[0], session)
         prompt_ok, prompt_msg = validate_system_prompt(system_prompt)
         if not prompt_ok:
             print(f"[错误] 提示词生成未成功，停止视频生成：{prompt_msg}", flush=True)
@@ -671,9 +733,15 @@ def run_workflow(
             print("[已取消] 用户未确认，停止发起视频生成", flush=True)
             sys.exit(0)
 
-    print(f"[5/7] 发起视频生成... (model={model}, duration={duration}s, aspectRatio={aspectRatio}, variants={variants})", flush=True)
+    print(f"[5/7] 本次提交 {len(image_urls)} 个图片地址:", flush=True)
+    for idx, image_url in enumerate(image_urls, start=1):
+        print(f"[5/7]   {idx}. {image_url}", flush=True)
+    print(
+        f"[5/7] 发起视频生成... (images={len(image_urls)}, model={model}, duration={duration}s, aspectRatio={aspectRatio}, variants={variants})",
+        flush=True,
+    )
     task_id = generate_video(
-        base_url, image_url, system_prompt, session,
+        base_url, image_urls, system_prompt, session,
         aspectRatio=aspectRatio,
         duration=duration,
         model=model,
@@ -721,7 +789,7 @@ def run_workflow(
 def main():
     if len(sys.argv) < 2:
         print("用法:")
-        print("  python zhenlongxia_workflow.py <图片路径> [选项]")
+        print("  python zhenlongxia_workflow.py <图片路径1> [图片路径2 ...] [选项]")
         print("  python zhenlongxia_workflow.py --list-models [--token=xxx]")
         print()
         print("选项:")
@@ -737,6 +805,7 @@ def main():
         print()
         print("示例:")
         print("  python zhenlongxia_workflow.py ./my_image.jpg")
+        print("  python zhenlongxia_workflow.py ./img1.jpg ./img2.jpg ./img3.jpg --model=grok_imagine --duration=10 --yes")
         print("  python zhenlongxia_workflow.py --list-models")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=sora2-new --duration=10")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=grok_imagine --duration=10 --aspectRatio=9:16 --variants=1 --yes")
@@ -744,7 +813,7 @@ def main():
         print("  python zhenlongxia_workflow.py --fetch-by-id=123456")
         sys.exit(1)
 
-    image_path = None
+    image_paths: list[str] = []
     fetch_task_id = None
     list_models = False
     token = None
@@ -775,8 +844,8 @@ def main():
             variants = int(arg.split("=", 1)[1])
         elif arg == "--yes":
             auto_confirm = True
-        elif not arg.startswith("--") and image_path is None:
-            image_path = arg
+        elif not arg.startswith("--"):
+            image_paths.append(arg)
 
     if list_models:
         config = load_config()
@@ -802,20 +871,24 @@ def main():
         print(f"[完成] 视频已保存：{local_path}")
         return
 
-    if not image_path:
+    if not image_paths:
         print("错误：缺少图片路径，或请使用 --id=ID")
         sys.exit(1)
 
-    if not os.path.isfile(image_path):
-        alt = Path(__file__).parent / os.path.basename(image_path)
-        if alt.exists():
-            image_path = str(alt)
-        else:
-            print(f"错误：文件不存在 {image_path}")
-            sys.exit(1)
+    resolved_image_paths: list[str] = []
+    for image_path in image_paths:
+        current_path = image_path
+        if not os.path.isfile(current_path):
+            alt = Path(__file__).parent / os.path.basename(current_path)
+            if alt.exists():
+                current_path = str(alt)
+            else:
+                print(f"错误：文件不存在 {current_path}")
+                sys.exit(1)
+        resolved_image_paths.append(current_path)
 
     run_workflow(
-        image_path,
+        resolved_image_paths,
         token=token,
         model=model,
         duration=duration,

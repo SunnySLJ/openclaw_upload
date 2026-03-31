@@ -4,12 +4,13 @@
 帧龙虾视频生成 - 技能封装脚本
 
 用法:
-    python generate_video.py <图片路径> [选项]
+    python generate_video.py <图片路径1> [图片路径2] [图片路径3] [图片路径4] [选项]
     python generate_video.py --list-models [--token=xxx]
 
 示例:
     python generate_video.py --list-models
     python generate_video.py image.jpg --model=sora2-new --duration=10 --variants=1
+    python generate_video.py img1.jpg img2.jpg img3.jpg img4.jpg --model=grok_imagine --duration=10 --yes
     python generate_video.py image.jpg --yes
 """
 
@@ -88,7 +89,7 @@ from zhenlongxia_workflow import fetch_model_options, load_config, load_saved_to
 
 def main():
     if len(sys.argv) < 2:
-        print("用法：python generate_video.py <图片路径> [选项]")
+        print("用法：python generate_video.py <图片路径1> [图片路径2] [图片路径3] [图片路径4] [选项]")
         print("      python generate_video.py --list-models [--token=xxx]")
         print()
         print("选项:")
@@ -99,9 +100,10 @@ def main():
         print("  --aspectRatio=X   比例，需匹配所选模型")
         print("  --variants=N      变体数量")
         print("  --yes             跳过发起视频前的人工确认")
+        print("  说明              最多传 4 张图片，最终生成 1 个视频")
         sys.exit(1)
 
-    image_path = None
+    image_paths: list[str] = []
     list_models = False
 
     # 解析参数
@@ -121,8 +123,8 @@ def main():
             kwargs["variants"] = int(arg.split("=", 1)[1])
         elif arg == "--yes":
             kwargs["auto_confirm"] = True
-        elif not arg.startswith("--") and image_path is None:
-            image_path = arg
+        elif not arg.startswith("--"):
+            image_paths.append(arg)
 
     if list_models:
         config = load_config()
@@ -145,13 +147,16 @@ def main():
         print_model_options(model_items)
         return
 
-    if image_path is None:
+    if not image_paths:
         print("错误：缺少图片路径")
+        sys.exit(1)
+    if len(image_paths) > 4:
+        print(f"错误：最多只支持 4 张图片，当前传入 {len(image_paths)} 张")
         sys.exit(1)
 
     # 运行工作流
     try:
-        task_id = run_workflow(image_path, **kwargs)
+        task_id = run_workflow(image_paths, **kwargs)
         print(f"\n已提交视频生成任务，任务 ID：{task_id}")
     except SystemExit as e:
         sys.exit(e.code)

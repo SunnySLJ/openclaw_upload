@@ -1,10 +1,16 @@
-[
-  {
-    "task_id": "1564",
-    "image_path": "/Users/mima0000/.openclaw/workspace/inbound_images/1774679376_outfit.jpg",
-    "image_url": "https://yinlingai.oss-cn-beijing.aliyuncs.com/flashCreation/package-info/1774679376_outfit.jpg",
-    "system_prompt": "视频内容文案（中文）：  \n\n画面温馨舒适，室内背景以柔和的灯光和简约装饰为主。人物是一位气质温和的女性，她正微笑着展示图片中的红色针织开衫与黑色红点半裙。她轻轻拨动衣架上的衣服，强调质感与设计。  \n\n播报语音内容：  \n“这款红色针织开衫搭配黑色红点半裙，优雅又充满活力，细节设计精致，兼具舒适与时尚感，是日常穿着的绝佳选择。”  \n\n镜头最后轻缓拉近产品，突出材质与细节。",
-    "base_url": "http://123.56.58.223:8081",
-    "token": "4ff2c1aa-384a-4c48-8fc1-e674c5f65219"
-  }
-]
+{
+  "task_id": "1729",
+  "image_path": "/Users/mima0000/.openclaw/workspace/inbound_images/7342b881-b438-4c21-b42b-8706f92d5e94.jpg",
+  "image_url": "https://yinlingai.oss-cn-beijing.aliyuncs.com/flashCreation/package-info/7342b881-b438-4c21-b42b-8706f92d5e94.jpg",
+  "parameters": {
+    "model": "auto",
+    "aspectRatio": "9:16",
+    "duration": 10,
+    "variants": 1
+  },
+  "base_url": "http://123.56.58.223:8081",
+  "token": "4ff2c1aa-384a-4c48-8fc1-e674c5f65219",
+  "output_file": "/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output/1729.mp4",
+  "created_at": "2026-03-31T11:55:00+08:00",
+  "status": "processing"
+}

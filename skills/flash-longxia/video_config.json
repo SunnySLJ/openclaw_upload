@@ -1,0 +1,72 @@
+{
+  "_comment": "视频生成配置 - 控制图生视频的参数和行为",
+  
+  "enabled": true,
+  
+  "defaults": {
+    "model": "auto",
+    "_comment_model": "默认模型：auto(自动选择), grok_imagine(HT1.0), sora2-new(HT2.0), kling-v3-omni(HT 人像)",
+    
+    "duration": 10,
+    "_comment_duration": "默认时长（秒）：6, 10, 15, 20",
+    
+    "aspectRatio": "9:16",
+    "_comment_aspectRatio": "默认画面比例：9:16(竖屏), 16:9(横屏), 1:1(正方形), 2:3, 3:2"
+  },
+  
+  "model_options": {
+    "auto": {
+      "label": "自动选择",
+      "description": "系统根据图片内容自动选择最优模型"
+    },
+    "grok_imagine": {
+      "label": "HT1.0",
+      "description": "Grok Imagine 模型，适合一般场景"
+    },
+    "sora2-new": {
+      "label": "HT2.0",
+      "description": "Sora2 新版，高质量生成"
+    },
+    "kling-v3-omni": {
+      "label": "HT 人像",
+      "description": "可灵 V3 全能的，适合人像视频"
+    }
+  },
+  
+  "duration_options": [6, 10, 15, 20],
+  "_comment_duration_options": "可选时长选项（秒）",
+  
+  "aspect_ratio_options": ["9:16", "16:9", "1:1", "2:3", "3:2"],
+  "_comment_aspect_ratio_options": "可选画面比例选项",
+  
+  "auto_confirm": false,
+  "_comment_auto_confirm": "是否跳过用户确认直接生成（true=直接生成，false=需要用户说"确定生成"）",
+  
+  "max_wait_minutes": 30,
+  "_comment_max_wait_minutes": "单个任务最大等待时间（分钟），超时放弃",
+  
+  "poll_interval_seconds": 30,
+  "_comment_poll_interval_seconds": "轮询任务状态的间隔（秒）",
+  
+  "max_images": 4,
+  "_comment_max_images": "单次生成最多支持的图片数量（1-4 张）",
+  
+  "token": {
+    "_comment": "Token 校验配置",
+    
+    "file_path": "flash_longxia/token.txt",
+    "_comment_file_path": "Token 文件路径（相对于 openclaw_upload 目录）",
+    
+    "auto_check": true,
+    "_comment_auto_check": "是否自动检查 token 有效性",
+    
+    "check_before_generate": true,
+    "_comment_check_before_generate": "生成视频前是否检查 token",
+    
+    "notify_on_expired": true,
+    "_comment_notify_on_expired": "Token 过期时是否通知用户",
+    
+    "notify_channel": "wechat",
+    "_comment_notify_channel": "通知渠道：wechat, feishu"
+  }
+}
