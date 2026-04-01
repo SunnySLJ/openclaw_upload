@@ -1,16 +1,1 @@
-{
-  "task_id": "1729",
-  "image_path": "/Users/mima0000/.openclaw/workspace/inbound_images/7342b881-b438-4c21-b42b-8706f92d5e94.jpg",
-  "image_url": "https://yinlingai.oss-cn-beijing.aliyuncs.com/flashCreation/package-info/7342b881-b438-4c21-b42b-8706f92d5e94.jpg",
-  "parameters": {
-    "model": "auto",
-    "aspectRatio": "9:16",
-    "duration": 10,
-    "variants": 1
-  },
-  "base_url": "http://123.56.58.223:8081",
-  "token": "4ff2c1aa-384a-4c48-8fc1-e674c5f65219",
-  "output_file": "/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output/1729.mp4",
-  "created_at": "2026-03-31T11:55:00+08:00",
-  "status": "processing"
-}
+[]

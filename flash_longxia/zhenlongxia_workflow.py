@@ -25,17 +25,33 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
+
+
+def _resolve_venv_python(venv_root: Path) -> Path | None:
+    """兼容 macOS/Linux 与 Windows 的虚拟环境 Python 路径。"""
+    candidates = [
+        venv_root / "bin" / "python3.12",
+        venv_root / "bin" / "python3",
+        venv_root / "bin" / "python",
+        venv_root / "Scripts" / "python.exe",
+        venv_root / "Scripts" / "python",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def _ensure_project_venv() -> None:
     """优先切换到仓库内的 .venv Python，避免依赖缺失。"""
     repo_root = Path(__file__).resolve().parent.parent
     venv_root = repo_root / ".venv"
-    venv_python = venv_root / "bin" / "python3.12"
-    if not venv_python.exists():
+    venv_python = _resolve_venv_python(venv_root)
+    if venv_python is None:
         return
 
     if Path(sys.prefix).resolve() == venv_root.resolve():
@@ -51,7 +67,7 @@ import yaml
 
 if sys.version_info[:2] != (3, 12):
     print(
-        f"[错误] 当前 Python 版本是 {sys.version.split()[0]}，本项目强制使用 Python 3.12，请改用 python3.12 运行。",
+        f"[错误] 当前 Python 版本是 {sys.version.split()[0]}，本项目强制使用 Python 3.12，请改用 Python 3.12 运行。",
         flush=True,
     )
     sys.exit(1)
@@ -618,6 +634,36 @@ def fetch_generated_video(
     )
 
 
+def start_background_poll(task_id: str, token: str) -> None:
+    """提交任务后拉起后台轮询脚本，优先使用 openclaw_upload/.venv 中的 Python。"""
+    poll_script = Path(__file__).parent / "poll_and_notify.py"
+    if not poll_script.exists():
+        print(f"[警告] 未找到后台轮询脚本：{poll_script}", flush=True)
+        return
+
+    upload_root = Path(__file__).resolve().parent.parent
+    venv_python = _resolve_venv_python(upload_root / ".venv")
+    python_bin = venv_python or Path(sys.executable)
+
+    poll_log = Path(__file__).parent / "poll_and_notify.log"
+    cmd = [
+        str(python_bin),
+        str(poll_script),
+        str(task_id),
+        f"--token={token}",
+    ]
+
+    print(f"[后台轮询] 启动：{python_bin} poll_and_notify.py {task_id}", flush=True)
+
+    with poll_log.open("a", encoding="utf-8") as log_fp:
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=log_fp,
+            stderr=log_fp,
+        )
+
+
 # ---------------------------------------------------------------------------
 # 主流程入口
 # ---------------------------------------------------------------------------
@@ -750,7 +796,8 @@ def run_workflow(
     if not task_id:
         sys.exit(1)
     print(f"[OK] 任务 ID: {task_id}")
-    print("[完成] 已提交视频生成任务，后续轮询与下载交由其他人处理", flush=True)
+    start_background_poll(task_id, token_val)
+    print(f"[完成] 已提交任务 {task_id}，后台轮询已启动", flush=True)
     return task_id
 
     # poll_int = video_cfg.get("poll_interval", 30)

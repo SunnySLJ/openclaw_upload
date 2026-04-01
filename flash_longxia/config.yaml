@@ -14,10 +14,13 @@ video:
   download_retries: 3
   download_retry_interval: 5
   output_dir: "./output"
-  confirm_before_generate: true  # 发起视频前是否要求人工确认
+  confirm_before_generate: false  # 发起视频前是否要求人工确认
   
   # 视频生成参数（可通过命令行覆盖）
   model: "auto"                  # 默认模型，实际可选值来自 model_config_url?modelType=1
   duration: 10                   # 时长，需匹配所选模型支持项
   aspectRatio: "16:9"            # 比例，需匹配所选模型支持项
   variants: 1                    # 变体数量
+
+notify:
+  wechat_target: "webchat"       # 微信通知目标
