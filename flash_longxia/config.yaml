@@ -23,4 +23,5 @@ video:
   variants: 1                    # 变体数量
 
 notify:
-  wechat_target: "webchat"       # 微信通知目标
+  wechat_target: "o9cq80zNpOiKXmKuyo7jrp0WpX9Y@im.wechat"  # 微信通知目标，可被环境变量 FLASH_LONGXIA_WECHAT_TARGET 覆盖
+  channel: ""                    # 可选，显式指定通知 channel

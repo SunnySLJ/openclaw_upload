@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -47,38 +48,133 @@ def build_session(token: str) -> requests.Session:
     return session
 
 
+def resolve_notify_settings() -> tuple[str | None, str | None]:
+    """从环境变量或 config.yaml 读取通知配置。"""
+    env_target = (os.getenv("FLASH_LONGXIA_WECHAT_TARGET") or os.getenv("OPENCLAW_WECHAT_TARGET") or "").strip()
+    env_channel = (os.getenv("FLASH_LONGXIA_NOTIFY_CHANNEL") or "").strip()
+    if env_target:
+        return env_target, env_channel or None
+
+    config = load_config()
+    notify_cfg = config.get("notify", {}) or {}
+    target = str(notify_cfg.get("wechat_target") or "").strip()
+    channel = str(notify_cfg.get("channel") or "").strip()
+    return (target or None, channel or None)
+
+
+def send_wechat_notification_direct(video_path: str, task_id: str) -> bool:
+    """直接发送微信通知，不依赖 cron。"""
+    import subprocess
+
+    wechat_target, notify_channel = resolve_notify_settings()
+    if not wechat_target:
+        print("[通知] 未配置微信目标，跳过直接发送")
+        return False
+
+    notify_text = f"""🦐 **视频生成完成通知**
+
+✅ 任务 {task_id} 已完成
+
+视频已下载完成，正在发送给您～
+
+---
+请说"**可以发布**"或"**确认发布**"，我会上传到视频号！"""
+    
+    # 先发送文本通知
+    cmd_text = ["openclaw", "message", "send"]
+    if notify_channel:
+        cmd_text.extend(["--channel", notify_channel])
+    cmd_text.extend([
+        "--target", wechat_target,
+        "--message", notify_text,
+    ])
+
+    try:
+        result = subprocess.run(cmd_text, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            print(f"[✅] 文本通知已发送")
+        else:
+            print(f"[⚠️] 文本通知发送失败：{result.stderr}")
+    except Exception as e:
+        print(f"[⚠️] 文本通知发送异常：{e}")
+    
+    # 发送视频文件
+    cmd_media = ["openclaw", "message", "send"]
+    if notify_channel:
+        cmd_media.extend(["--channel", notify_channel])
+    cmd_media.extend([
+        "--target", wechat_target,
+        "--media", video_path,
+        "--message", f"📹 视频文件：任务 {task_id}",
+    ])
+
+    try:
+        result = subprocess.run(cmd_media, capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            print(f"[✅] 视频文件已直接发送")
+            return True
+        else:
+            print(f"[⚠️] 视频文件发送失败：{result.stderr}")
+            return False
+    except Exception as e:
+        print(f"[⚠️] 视频文件发送异常：{e}")
+        return False
+
+
 def write_notification(video_path: str, task_info: dict) -> None:
-    """写入完成通知，使用队列模式避免覆盖。"""
-    notification = {
-        "type": "video_completed",
-        "video_path": video_path,
-        "task_id": task_info.get("task_id"),
-        "image_path": task_info.get("image_path"),
-        "message": "视频生成完成！请确认是否发布～",
-    }
+    """写入完成通知并立即发送微信。"""
+    task_id = task_info.get("task_id", "unknown")
     
-    # 读取现有通知队列（如果存在）
-    notifications = []
-    if NOTIFY_FILE.exists():
-        try:
-            data = json.loads(NOTIFY_FILE.read_text(encoding='utf-8'))
-            if isinstance(data, list):
-                notifications = data
-            elif isinstance(data, dict):
-                notifications = [data]
-        except json.JSONDecodeError:
-            notifications = []
+    # 先尝试直接发送微信通知
+    print(f"[通知] 尝试直接发送微信通知...")
+    sent = send_wechat_notification_direct(video_path, task_id)
     
-    # 追加新通知
-    notifications.append(notification)
-    
-    # 写入队列
-    NOTIFY_FILE.write_text(
-        json.dumps(notifications, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    print(f"[通知] 视频已完成：{video_path}")
-    print(f"[通知] 通知文件已写入：{NOTIFY_FILE}（队列长度：{len(notifications)}）")
+    if sent:
+        print(f"[通知] 视频已完成并发送：{video_path}")
+        # 写入已处理记录，避免 cron 重复发送
+        PROCESSED_FILE = Path(__file__).parent / ".processed_notifications.json"
+        processed = set()
+        if PROCESSED_FILE.exists():
+            try:
+                processed = set(json.loads(PROCESSED_FILE.read_text(encoding='utf-8')))
+            except:
+                processed = set()
+        processed.add(str(task_id))
+        PROCESSED_FILE.write_text(
+            json.dumps(list(processed), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    else:
+        # 如果直接发送失败，写入文件等待 cron 处理
+        notification = {
+            "type": "video_completed",
+            "video_path": video_path,
+            "task_id": task_id,
+            "image_path": task_info.get("image_path"),
+            "message": "视频生成完成！请确认是否发布～",
+        }
+        
+        # 读取现有通知队列（如果存在）
+        notifications = []
+        if NOTIFY_FILE.exists():
+            try:
+                data = json.loads(NOTIFY_FILE.read_text(encoding='utf-8'))
+                if isinstance(data, list):
+                    notifications = data
+                elif isinstance(data, dict):
+                    notifications = [data]
+            except json.JSONDecodeError:
+                notifications = []
+        
+        # 追加新通知
+        notifications.append(notification)
+        
+        # 写入队列
+        NOTIFY_FILE.write_text(
+            json.dumps(notifications, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        print(f"[通知] 直接发送失败，已写入通知文件：{NOTIFY_FILE}（队列长度：{len(notifications)}）")
 
 
 def poll_task(task_info: dict, session: requests.Session) -> bool:
