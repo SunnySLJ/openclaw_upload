@@ -201,14 +201,23 @@ def poll_task(task_info: dict, session: requests.Session) -> bool:
             rep_status = _extract_rep_status(record)
             print(f"[轮询] 第{attempt}次：{_build_status_text(record)}")
 
+            # 红线 8：判断视频完成的唯一标准是 mediaUrl 有值！
             video_url = get_video_url(record)
             if not video_url:
                 video_url = _extract_video_url_from_rep_msg(record)
                 if video_url:
                     record["mediaUrl"] = record.get("mediaUrl") or video_url
 
-            if video_url or status in _STATUS_SUCCESS or rep_status in _STATUS_SUCCESS:
-                print(f"[完成] 任务 {task_id} 已完成")
+            # 优先检查 mediaUrl，不管 status 是什么值
+            if video_url:
+                print(f"[完成] 任务 {task_id} 已完成 (mediaUrl 有值)")
+                filename = f"{task_id}.mp4"
+                video_path = download_video(video_url, str(OUTPUT_DIR), filename, session=session)
+                write_notification(video_path, task_info)
+                return True
+
+            if status in _STATUS_SUCCESS or rep_status in _STATUS_SUCCESS:
+                print(f"[完成] 任务 {task_id} 已完成 (status 判断)")
                 if not video_url:
                     print(f"[错误] 任务 {task_id} 已完成但未找到视频地址")
                     return False
