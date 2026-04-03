@@ -12,12 +12,14 @@ description: Generate one video from 1 to 4 local images and query or download c
 - 先定位包含 `flash_longxia/zhenlongxia_workflow.py` 的仓库根目录。
 - 封装脚本会优先尝试当前目录、环境变量 `OPENCLAW_UPLOAD_ROOT`、`~/Desktop/openclaw_upload` 和 `~/.openclaw/workspace/openclaw_upload`。
 - 若自动定位失败，显式设置 `OPENCLAW_UPLOAD_ROOT=/path/to/openclaw_upload` 再运行命令。
+- 若工作区目录不是默认值，同时设置 `OPENCLAW_WORKSPACE_ROOT=/path/to/workspace`。
 
 ## 前置条件
 
 - 使用 `python3.12`；如果仓库根目录有 `.venv/bin/python3.12`，脚本会自动切换过去。
 - 确保 `flash_longxia/config.yaml` 已准备好。
 - 确保 `flash_longxia/token.txt` 存在，或在命令中传 `--token=...`。
+- 若依赖微信通知，提前配置 `OPENCLAW_WECHAT_TARGET` 或 `FLASH_LONGXIA_WECHAT_TARGET`。
 - 生成任务支持传 1 到 4 张本地图片路径，并生成 1 个视频；查询/下载任务需要 `generateVideo` 返回的任务 ID。
 
 ## 常用命令

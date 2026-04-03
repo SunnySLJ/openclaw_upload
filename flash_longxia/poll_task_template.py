@@ -18,10 +18,11 @@ import time
 import os
 import sys
 import subprocess
+from pathlib import Path
 
 # 配置
-BASE_URL = "http://123.56.58.223:8081"
-OUTPUT_DIR = "/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output"
+BASE_URL = os.getenv("FLASH_LONGXIA_BASE_URL", "http://123.56.58.223:8081")
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 MAX_ATTEMPTS = 60  # 30 分钟
 INTERVAL = 30  # 30 秒
 
@@ -33,7 +34,8 @@ def get_task_args():
     
     task_id = sys.argv[1]
     token = sys.argv[2]
-    wechat_target = sys.argv[3] if len(sys.argv) > 3 else "o9cq80zNpOiKXmKuyo7jrp0WpX9Y@im.wechat"
+    default_target = os.getenv("FLASH_LONGXIA_WECHAT_TARGET") or os.getenv("OPENCLAW_WECHAT_TARGET")
+    wechat_target = sys.argv[3] if len(sys.argv) > 3 else default_target
     return task_id, token, wechat_target
 
 def check_task_status(task_id, token):
@@ -50,14 +52,14 @@ def check_task_status(task_id, token):
 
 def download_video(video_url, task_id):
     """下载视频到本地"""
-    output_file = os.path.join(OUTPUT_DIR, f"{task_id}.mp4")
+    output_file = OUTPUT_DIR / f"{task_id}.mp4"
     try:
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         response = requests.get(video_url, timeout=60)
         with open(output_file, 'wb') as f:
             f.write(response.content)
         print(f"[完成] 视频已保存：{output_file}")
-        return output_file
+        return str(output_file)
     except Exception as e:
         print(f"[错误] 下载失败：{e}")
         return None
@@ -70,7 +72,7 @@ def send_wechat_notification(video_file, task_id, wechat_target):
             "--channel", "openclaw-weixin",
             "--target", wechat_target,
             "--media", video_file,
-            "--message", f"🎀 视频生成完成啦！任务 {task_id}，10 秒竖屏。千千看看效果怎么样？回复"可以发布"我就帮你上传～ ✨"
+            "--message", f'🎀 视频生成完成啦！任务 {task_id}，10 秒竖屏。千千看看效果怎么样？回复"可以发布"我就帮你上传～ ✨'
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
@@ -85,6 +87,9 @@ def send_wechat_notification(video_file, task_id, wechat_target):
 
 def main():
     task_id, token, wechat_target = get_task_args()
+    if not wechat_target:
+        print("[错误] 缺少微信目标，请传第三个参数，或设置 FLASH_LONGXIA_WECHAT_TARGET / OPENCLAW_WECHAT_TARGET")
+        sys.exit(1)
     print(f"[开始] 轮询任务 {task_id} 状态，最多等待 {MAX_ATTEMPTS * INTERVAL // 60} 分钟")
     
     for i in range(1, MAX_ATTEMPTS + 1):

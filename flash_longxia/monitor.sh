@@ -1,7 +1,8 @@
 #!/bin/bash
 
-OUTPUT_DIR="/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output"
-STATE_FILE="/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/.monitor_state.json"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OUTPUT_DIR="${SCRIPT_DIR}/output"
+STATE_FILE="${SCRIPT_DIR}/.monitor_state.json"
 TIMEOUT_SECONDS=1800  # 30 分钟
 CHECK_INTERVAL=60     # 60 秒
 

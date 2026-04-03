@@ -13,7 +13,7 @@
 | **notification_config.json** | `openclaw_upload/skills/flash-longxia/` | 通知开关和模板 |
 | **cleanup_config.json** | `openclaw_upload/skills/flash-longxia/` | 文件自动清理 |
 | **paths_config.json** | `openclaw_upload/skills/flash-longxia/` | 文件路径和端口配置 |
-| **login_check_config.json** | `xiaolong-upload/skills/auth/` | 登录状态定时检查 |
+| **login_check_config.json** | `skills/auth/` | 登录状态定时检查 |
 
 ---
 
@@ -112,12 +112,18 @@
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `paths.inbound_images` | 图片保存目录 | `/Users/mima0000/.openclaw/workspace/inbound_images/` |
-| `paths.video_output` | 视频输出目录 | `.../flash_longxia/output/` |
+| `workspace_root` | OpenClaw 工作区根目录 | `${OPENCLAW_WORKSPACE_ROOT}` |
+| `openclaw_upload_root` | 当前仓库根目录 | `${OPENCLAW_UPLOAD_ROOT}` |
+| `paths.inbound_images` | 图片保存目录 | `${OPENCLAW_WORKSPACE_ROOT}/inbound_images/` |
+| `paths.video_output` | 视频输出目录 | `flash_longxia/output/` |
 | `chrome_profiles.douyin.port` | 抖音 Chrome 端口 | `9224` |
 | `chrome_profiles.xiaohongshu.port` | 小红书 Chrome 端口 | `9223` |
 | `chrome_profiles.kuaishou.port` | 快手 Chrome 端口 | `9225` |
 | `chrome_profiles.shipinhao.port` | 视频号 Chrome 端口 | `9226` |
+
+迁移建议：
+- 新机器优先设置 `OPENCLAW_UPLOAD_ROOT` 和 `OPENCLAW_WORKSPACE_ROOT`，不要把旧机器绝对路径直接写回配置。
+- `flash_longxia/output`、`flash_longxia/temp`、`cookies/` 建议保持仓库内相对路径，方便整体迁移。
 
 ### login_check_config.json
 

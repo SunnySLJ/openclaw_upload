@@ -1,30 +1,30 @@
 {
   "_comment": "路径配置 - 定义各类文件的存储路径",
   
-  "workspace_root": "/Users/mima0000/.openclaw/workspace",
-  "_comment_workspace_root": "OpenClaw 工作区根目录",
+  "workspace_root": "${OPENCLAW_WORKSPACE_ROOT}",
+  "_comment_workspace_root": "OpenClaw 工作区根目录；迁移到新机器时优先通过环境变量注入",
   
-  "openclaw_upload_root": "/Users/mima0000/.openclaw/workspace/openclaw_upload",
-  "_comment_openclaw_upload_root": "上传模块根目录",
+  "openclaw_upload_root": "${OPENCLAW_UPLOAD_ROOT}",
+  "_comment_openclaw_upload_root": "上传模块根目录；建议指向当前仓库根目录",
   
   "paths": {
     
-    "inbound_images": "/Users/mima0000/.openclaw/workspace/inbound_images/",
+    "inbound_images": "${OPENCLAW_WORKSPACE_ROOT}/inbound_images/",
     "_comment_inbound_images": "接收到的图片保存目录（用户发送的照片）",
     
-    "video_output": "/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output/",
-    "_comment_video_output": "视频生成输出目录（生成的 MP4 文件）",
+    "video_output": "flash_longxia/output/",
+    "_comment_video_output": "视频生成输出目录（相对 openclaw_upload_root）",
     
-    "video_temp": "/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/temp/",
-    "_comment_video_temp": "视频临时文件目录（下载/处理中的临时文件）",
+    "video_temp": "flash_longxia/temp/",
+    "_comment_video_temp": "视频临时文件目录（相对 openclaw_upload_root）",
     
-    "qr_code_logs": "/Users/mima0000/.openclaw/workspace/logs/auth_qr/",
+    "qr_code_logs": "${OPENCLAW_WORKSPACE_ROOT}/logs/auth_qr/",
     "_comment_qr_code_logs": "登录二维码截图保存目录",
     
-    "cookies_base": "/Users/mima0000/.openclaw/workspace/openclaw_upload/cookies/",
-    "_comment_cookies_base": "Cookies 保存基础目录",
+    "cookies_base": "cookies/",
+    "_comment_cookies_base": "Cookies 保存基础目录（相对 openclaw_upload_root）",
     
-    "logs": "/Users/mima0000/.openclaw/workspace/logs/",
+    "logs": "${OPENCLAW_WORKSPACE_ROOT}/logs/",
     "_comment_logs": "日志文件目录"
   },
   

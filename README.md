@@ -25,3 +25,9 @@
 - 模型、时长、比例来自 `GET /api/v1/globalConfig/getModel?modelType=1`，生成前会按接口返回值校验。
 - 轮询间隔、超时、下载重试可在 `config.yaml` 配置。
 - 当后端状态字段滞后时，主流程会尝试解析 `repMsg` 中的 `result` 链接并直接下载。
+
+## 迁移
+- 不要直接复制旧机器的 `.venv`；在新机器重新创建并安装依赖。
+- 仓库内脚本现在默认按“脚本所在目录”定位 `flash_longxia/output` 等路径，不再依赖固定绝对路径。
+- 若你的 OpenClaw 工作区不在默认位置，设置 `OPENCLAW_UPLOAD_ROOT` 指向仓库根目录，设置 `OPENCLAW_WORKSPACE_ROOT` 指向工作区根目录。
+- 需要微信通知时，设置 `OPENCLAW_WECHAT_TARGET` 或 `FLASH_LONGXIA_WECHAT_TARGET`。

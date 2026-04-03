@@ -8,6 +8,7 @@
 import os
 import sys
 import time
+from pathlib import Path
 
 from zhenlongxia_workflow import (
     _extract_video_url_from_rep_msg,
@@ -19,9 +20,7 @@ from zhenlongxia_workflow import (
 )
 
 TASK_ID = "1719"
-BASE_URL = "http://123.56.58.223:8081"
-TOKEN = "4ff2c1aa-384a-4c48-8fc1-e674c5f65219"
-OUTPUT_DIR = "/Users/mima0000/.openclaw/workspace/openclaw_upload/flash_longxia/output"
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 MAX_ATTEMPTS = 60  # 30 分钟，每 30 秒一次
 
 def poll_task():
@@ -53,7 +52,7 @@ def poll_task():
 
             if video_url:
                 download_video(video_url)
-                print(f"视频下载完成：{OUTPUT_DIR}/{TASK_ID}.mp4")
+                print(f"视频下载完成：{OUTPUT_DIR / f'{TASK_ID}.mp4'}")
                 sys.exit(0)
 
             if str(status) in {"3", "failed", "FAILED", "error", "ERROR"}:
@@ -70,14 +69,14 @@ def poll_task():
 def download_video(video_url):
     """下载视频"""
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    output_path = os.path.join(OUTPUT_DIR, f"{TASK_ID}.mp4")
+    output_path = OUTPUT_DIR / f"{TASK_ID}.mp4"
     
     response = requests.get(video_url, stream=True)
     if response.status_code == 200:
         with open(output_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        return output_path
+        return str(output_path)
     return None
 
 if __name__ == "__main__":
