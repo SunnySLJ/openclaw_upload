@@ -207,6 +207,55 @@ def fetch_model_options(
     return items
 
 
+def fetch_template_categories(
+    base_url: str,
+    session: requests.Session,
+    *,
+    media_type: int = 0,
+) -> list[dict]:
+    """获取行业模板分类列表。"""
+    url = f"{base_url}/api/v1/aiTemplateCategory/getList"
+    resp = session.post(url, json={"mediaType": media_type}, timeout=15)
+    data = resp.json()
+    if data.get("code") not in (200, 0):
+        raise RuntimeError(f"获取模板分类失败：{data}")
+    items = data.get("data")
+    if not isinstance(items, list):
+        raise RuntimeError(f"模板分类返回格式异常：{data}")
+    return items
+
+
+def fetch_template_options(
+    base_url: str,
+    session: requests.Session,
+    *,
+    page_num: int = 1,
+    page_size: int = 10,
+    tab_type: int = 0,
+) -> list[dict]:
+    """获取行业模板列表。"""
+    url = f"{base_url}/api/v1/aiTemplate/pageList"
+    payload = {
+        "pageNum": page_num,
+        "pageSize": page_size,
+        "tabType": tab_type,
+    }
+    resp = session.post(url, json=payload, timeout=15)
+    data = resp.json()
+    if data.get("code") not in (200, 0):
+        raise RuntimeError(f"获取模板列表失败：{data}")
+
+    items = data.get("data")
+    if isinstance(items, dict):
+        for key in ("records", "list", "rows"):
+            candidate = items.get(key)
+            if isinstance(candidate, list):
+                return candidate
+    if isinstance(items, list):
+        return items
+    raise RuntimeError(f"模板列表返回格式异常：{data}")
+
+
 def print_model_options(model_items: list[dict]) -> None:
     """打印模型及其支持的时长、比例。"""
     print("可用模型:", flush=True)
@@ -233,6 +282,135 @@ def print_model_options(model_items: list[dict]) -> None:
             f" | aspectRatios={', '.join(resolutions) or '-'}",
             flush=True,
         )
+
+
+def print_template_options(template_items: list[dict]) -> None:
+    """打印行业模板列表。"""
+    print("可用行业模板:", flush=True)
+    for item in template_items:
+        template_id = (
+            item.get("id")
+            or item.get("tmpplateId")
+            or item.get("templateId")
+            or item.get("aiTemplateId")
+        )
+        title = str(item.get("title") or "").strip() or "-"
+        prompt = str(item.get("prompt") or "").strip().replace("\n", " ")
+        if len(prompt) > 60:
+            prompt = f"{prompt[:60]}..."
+        print(
+            f"  - id={template_id} | tabType={item.get('tabType')} | picType={item.get('picType')}"
+            f" | mediaType={item.get('mediaType')} | title={title} | prompt={prompt or '-'}",
+            flush=True,
+        )
+
+
+def print_template_categories(category_items: list[dict]) -> None:
+    """打印模板分类列表。"""
+    print("模板分类:", flush=True)
+    for item in category_items:
+        print(
+            f"  - tabType={item.get('tabType')} | tabName={item.get('tabName') or '-'}"
+            f" | mediaType={item.get('mediaType')}",
+            flush=True,
+        )
+
+
+def find_template_category(
+    category_items: list[dict],
+    *,
+    tab_type: int,
+) -> dict | None:
+    """按 tabType 查找模板分类。"""
+    for item in category_items:
+        if item.get("tabType") == tab_type:
+            return item
+    return None
+
+
+def find_template_category_by_name(
+    category_items: list[dict],
+    *,
+    tab_name: str,
+) -> dict | None:
+    """按 tabName 查找模板分类。"""
+    target_name = str(tab_name).strip()
+    for item in category_items:
+        if str(item.get("tabName") or "").strip() == target_name:
+            return item
+    return None
+
+
+def select_industry_template(
+    base_url: str,
+    session: requests.Session,
+    *,
+    page_num: int = 1,
+    page_size: int = 10,
+) -> tuple[int | None, str | None]:
+    """交互式选择行业模板；用户跳过时返回 (None, None)。"""
+    answer = input("[模板] 是否使用行业模板？输入 y 选择，其他任意键跳过: ").strip().lower()
+    if answer not in {"y", "yes"}:
+        print("[模板] 已跳过行业模板", flush=True)
+        return None, None
+
+    category_items = fetch_template_categories(base_url, session, media_type=1)
+    industry_category = find_template_category_by_name(category_items, tab_name="行业模板")
+    if not industry_category or industry_category.get("tabType") is None:
+        print("[模板] 未找到 tabName=行业模板 的分类，跳过模板生成", flush=True)
+        return None, None
+
+    tab_type = int(industry_category["tabType"])
+    category_title = str(industry_category.get("tabName") or "").strip() or "行业模板"
+    template_items = fetch_template_options(
+        base_url,
+        session,
+        page_num=page_num,
+        page_size=page_size,
+        tab_type=tab_type,
+    )
+    if not template_items:
+        print(f"[模板] tabType={tab_type} 当前没有可选模板，跳过模板生成", flush=True)
+        return None, None
+
+    print(f"[模板] 可选行业模板（tabType={tab_type}, title={category_title}）:", flush=True)
+    for idx, item in enumerate(template_items, start=1):
+        template_id = (
+            item.get("id")
+            or item.get("tmpplateId")
+            or item.get("templateId")
+            or item.get("aiTemplateId")
+        )
+        item_title = str(item.get("title") or "").strip() or category_title
+        print(f"  {idx}. id={template_id} | title={item_title}", flush=True)
+
+    choice = input("[模板] 请输入序号选择模板，直接回车或输入 0 跳过: ").strip()
+    if not choice or choice == "0":
+        print("[模板] 已跳过行业模板", flush=True)
+        return None, None
+    if not choice.isdigit():
+        print(f"[模板] 无效序号：{choice}，跳过行业模板", flush=True)
+        return None, None
+
+    index = int(choice) - 1
+    if index < 0 or index >= len(template_items):
+        print(f"[模板] 序号超出范围：{choice}，跳过行业模板", flush=True)
+        return None, None
+
+    selected = template_items[index]
+    template_id = (
+        selected.get("id")
+        or selected.get("tmpplateId")
+        or selected.get("templateId")
+        or selected.get("aiTemplateId")
+    )
+    if template_id is None:
+        print("[模板] 选中的模板缺少 ID，跳过行业模板", flush=True)
+        return None, None
+
+    selected_title = str(selected.get("title") or "").strip() or category_title
+    print(f"[模板] 已选择: id={template_id}, title={selected_title}, tabType={tab_type}", flush=True)
+    return int(template_id), selected_title
 
 
 def resolve_video_options(
@@ -327,6 +505,8 @@ def confirm_video_generation(
     duration: int,
     aspectRatio: str,
     variants: int,
+    tmpplateId: int | None = None,
+    title: str | None = None,
 ) -> bool:
     """在发起 generateVideo 前请求用户确认。"""
     preview = prompt.replace("\n", " ").strip()
@@ -335,6 +515,8 @@ def confirm_video_generation(
 
     print("[确认] 即将调用 generateVideo", flush=True)
     print(f"[确认] 参数: model={model}, duration={duration}, aspectRatio={aspectRatio}, variants={variants}", flush=True)
+    if tmpplateId is not None:
+        print(f"[确认] 模板: tmpplateId={tmpplateId}, title={title or '-'}", flush=True)
     print(f"[确认] 提示词预览: {preview}", flush=True)
     answer = input("[确认] 是否继续生成视频？输入 y 继续，其他任意键取消: ").strip().lower()
     return answer in {"y", "yes"}
@@ -349,6 +531,8 @@ def generate_video(
     duration: int = 10,
     model: str = "auto",
     variants: int = 1,
+    tmpplateId: int | None = None,
+    title: str | None = None,
     **kwargs,
 ) -> str | None:
     """
@@ -372,6 +556,9 @@ def generate_video(
     # model 参数按接口配置传递，也兼容调用方显式传空时跳过
     if model:
         payload["model"] = model
+    if tmpplateId is not None:
+        payload["tmpplateId"] = tmpplateId
+        payload["title"] = title or ""
     payload.update({k: v for k, v in kwargs.items() if v is not None})
     resp = session.post(url, json=payload, timeout=30)
     data = resp.json()
@@ -676,6 +863,8 @@ def run_workflow(
     duration: int | None = None,
     aspectRatio: str | None = None,
     variants: int | None = None,
+    tmpplateId: int | None = None,
+    title: str | None = None,
     auto_confirm: bool = False,
     prompt: str | None = None,
 ):
@@ -706,6 +895,9 @@ def run_workflow(
     token_val = token or load_saved_token()
     if not token_val:
         print("[错误] 请将 Token 写入 flash_longxia/token.txt 或使用 --token=xxx", flush=True)
+        sys.exit(1)
+    if tmpplateId is not None and not (title or "").strip():
+        print("[错误] 使用模板生成时必须同时传入 title", flush=True)
         sys.exit(1)
 
     session = requests.Session()
@@ -754,6 +946,12 @@ def run_workflow(
         image_urls.append(image_url)
         print(f"[OK] 第{idx}/{len(local_image_paths)}张图片已上传：{image_url}", flush=True)
 
+    if tmpplateId is None and not auto_confirm:
+        selected_template_id, selected_template_title = select_industry_template(base_url, session)
+        if selected_template_id is not None:
+            tmpplateId = selected_template_id
+            title = selected_template_title
+
     # [4/7] 图生文获取提示词（如果传入了自定义 prompt 则跳过）
     if prompt:
         print(f"[4/7] 使用自定义提示词...", flush=True)
@@ -775,6 +973,8 @@ def run_workflow(
             duration=duration,
             aspectRatio=aspectRatio,
             variants=variants,
+            tmpplateId=tmpplateId,
+            title=title,
         ):
             print("[已取消] 用户未确认，停止发起视频生成", flush=True)
             sys.exit(0)
@@ -786,12 +986,16 @@ def run_workflow(
         f"[5/7] 发起视频生成... (images={len(image_urls)}, model={model}, duration={duration}s, aspectRatio={aspectRatio}, variants={variants})",
         flush=True,
     )
+    if tmpplateId is not None:
+        print(f"[5/7] 使用模板生成: tmpplateId={tmpplateId}, title={title}", flush=True)
     task_id = generate_video(
         base_url, image_urls, system_prompt, session,
         aspectRatio=aspectRatio,
         duration=duration,
         model=model,
         variants=variants,
+        tmpplateId=tmpplateId,
+        title=title,
     )
     if not task_id:
         sys.exit(1)
@@ -838,14 +1042,23 @@ def main():
         print("用法:")
         print("  python zhenlongxia_workflow.py <图片路径1> [图片路径2 ...] [选项]")
         print("  python zhenlongxia_workflow.py --list-models [--token=xxx]")
+        print("  python zhenlongxia_workflow.py --list-templates [--mediaType=0] [--tabType=0] [--pageNum=1] [--pageSize=10] [--token=xxx]")
         print()
         print("选项:")
         print("  --token=xxx          Token（也可写入 token.txt）")
         print("  --list-models        查询可用模型、时长与比例")
+        print("  --list-templates     先查模板分类，再按 tabType 查询行业模板")
+        print("  --mediaType=N        模板分类 mediaType，默认 0")
+        print("  --tabType=N          模板 tabType；不传则优先取 tabName=行业模板")
+        print("  --pageNum=N          模板分页页码，默认 1")
+        print("  --pageSize=N         模板分页大小，默认 10")
         print("  --model=MODEL        模型值，来自模型配置接口")
         print("  --duration=N         视频时长，需匹配所选模型")
         print("  --aspectRatio=XXX    画面比例，需匹配所选模型")
         print("  --variants=N         生成变体数量")
+        print("  --tmpplateId=ID      模板 ID，透传给 generateVideo")
+        print("  --templateId=ID      模板 ID，兼容别名，透传为 tmpplateId")
+        print("  --title=TEXT         模板标题/产品名称；交互选模板时默认取模板标题")
         print("  --yes                跳过发起视频前的人工确认")
         print("  --id=ID              按任务 ID 直接下载已生成视频")
         print("  --fetch-by-id=ID     按任务 ID 直接下载已生成视频（兼容旧参数）")
@@ -856,6 +1069,9 @@ def main():
         print("  python zhenlongxia_workflow.py --list-models")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=sora2-new --duration=10")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=grok_imagine --duration=10 --aspectRatio=9:16 --variants=1 --yes")
+        print("  python zhenlongxia_workflow.py --list-templates --mediaType=0")
+        print("  python zhenlongxia_workflow.py --list-templates --mediaType=0 --tabType=0")
+        print("  python zhenlongxia_workflow.py ./my_image.jpg --tmpplateId=1001 --title=产品名 --yes")
         print("  python zhenlongxia_workflow.py --id=123456")
         print("  python zhenlongxia_workflow.py --fetch-by-id=123456")
         sys.exit(1)
@@ -863,16 +1079,25 @@ def main():
     image_paths: list[str] = []
     fetch_task_id = None
     list_models = False
+    list_templates = False
     token = None
     model = None
     duration = None
     aspectRatio = None
     variants = None
+    page_num = 1
+    page_size = 20
+    media_type = 0
+    tab_type = None
+    tmpplateId = None
+    title = None
     auto_confirm = False
 
     for arg in sys.argv[1:]:
         if arg == "--list-models":
             list_models = True
+        elif arg == "--list-templates":
+            list_templates = True
         elif arg.startswith("--id="):
             fetch_task_id = arg.split("=", 1)[1]
         elif arg.startswith("--fetch-by-id="):
@@ -881,6 +1106,14 @@ def main():
             fetch_task_id = arg.split("=", 1)[1]
         elif arg.startswith("--token="):
             token = arg.split("=", 1)[1]
+        elif arg.startswith("--mediaType="):
+            media_type = int(arg.split("=", 1)[1])
+        elif arg.startswith("--tabType="):
+            tab_type = int(arg.split("=", 1)[1])
+        elif arg.startswith("--pageNum="):
+            page_num = int(arg.split("=", 1)[1])
+        elif arg.startswith("--pageSize="):
+            page_size = int(arg.split("=", 1)[1])
         elif arg.startswith("--model="):
             model = arg.split("=", 1)[1]
         elif arg.startswith("--duration="):
@@ -889,6 +1122,12 @@ def main():
             aspectRatio = arg.split("=", 1)[1]
         elif arg.startswith("--variants="):
             variants = int(arg.split("=", 1)[1])
+        elif arg.startswith("--tmpplateId="):
+            tmpplateId = int(arg.split("=", 1)[1])
+        elif arg.startswith("--templateId="):
+            tmpplateId = int(arg.split("=", 1)[1])
+        elif arg.startswith("--title="):
+            title = arg.split("=", 1)[1]
         elif arg == "--yes":
             auto_confirm = True
         elif not arg.startswith("--"):
@@ -911,6 +1150,59 @@ def main():
         })
         model_items = fetch_model_options(base_url, session, model_config_url=model_config_url)
         print_model_options(model_items)
+        return
+
+    if list_templates:
+        config = load_config()
+        base_url = config["base_url"].rstrip("/")
+        token_val = token or load_saved_token()
+        if not token_val:
+            print("错误：请将 Token 写入 flash_longxia/token.txt 或使用 --token=xxx")
+            sys.exit(1)
+
+        session = requests.Session()
+        session.headers.update({
+            "token": token_val,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        })
+        category_items = fetch_template_categories(base_url, session, media_type=media_type)
+        print_template_categories(category_items)
+        if tab_type is not None:
+            tab_types = [tab_type]
+        else:
+            industry_category = find_template_category_by_name(
+                category_items,
+                tab_name="行业模板",
+            )
+            if industry_category and industry_category.get("tabType") is not None:
+                tab_types = [industry_category.get("tabType")]
+            else:
+                tab_types = [
+                    item.get("tabType")
+                    for item in category_items
+                    if item.get("tabType") is not None
+                ]
+        seen_tab_types: set[int] = set()
+        for current_tab_type in tab_types:
+            if current_tab_type in seen_tab_types:
+                continue
+            seen_tab_types.add(current_tab_type)
+            category = find_template_category(category_items, tab_type=current_tab_type)
+            mapped_title = (category or {}).get("tabName") or ""
+            print(
+                f"分类映射: title={mapped_title or '-'}, tabType={current_tab_type}",
+                flush=True,
+            )
+            print(f"tabType={current_tab_type} 的行业模板:", flush=True)
+            template_items = fetch_template_options(
+                base_url,
+                session,
+                page_num=page_num,
+                page_size=page_size,
+                tab_type=current_tab_type,
+            )
+            print_template_options(template_items)
         return
 
     if fetch_task_id:
@@ -941,6 +1233,8 @@ def main():
         duration=duration,
         aspectRatio=aspectRatio,
         variants=variants,
+        tmpplateId=tmpplateId,
+        title=title,
         auto_confirm=auto_confirm,
     )
 
