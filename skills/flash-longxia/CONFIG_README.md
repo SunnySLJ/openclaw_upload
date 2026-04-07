@@ -130,7 +130,7 @@
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
 | `daily_check_time` | 检查时间 | `10:10` |
-| `platforms` | 检查平台 | 全部 4 个 |
+| `platforms` | 检查平台 | 当前仅视频号 |
 | `auto_retry_login` | 自动恢复登录 | `true` |
 | `qr_code_notify` | 发送二维码 | `true` |
 
@@ -156,7 +156,7 @@
 }
 ```
 
-### 场景 3：改成每天早上 9 点检查登录
+### 场景 3：改成每天早上 9 点检查视频号登录
 ```json
 // login_check_config.json
 {

@@ -24,7 +24,7 @@ video:
   # 视频生成参数（可通过命令行覆盖）
   model: "auto"                  # 默认模型，实际可选值来自 model_config_url?modelType=1
   duration: 10                   # 时长，需匹配所选模型支持项
-  aspectRatio: "16:9"            # 比例，需匹配所选模型支持项
+  aspectRatio: "9:16"            # 比例，需匹配所选模型支持项
   variants: 1                    # 变体数量
 
 # 通知配置（可选）

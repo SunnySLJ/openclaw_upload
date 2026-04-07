@@ -17,7 +17,8 @@
 或通过命令行 --token=xxx 传入。
 
 新增功能（v2.0）：
-  - 支持命令行参数选择模型、风格、时长、画质、画面比例
+  - 支持命令行参数选择模型、时长、变体数、画面比例
+  - 支持行业模板查询、交互选择和命令行透传
   - 支持 config.yaml 配置默认参数
 """
 
@@ -93,7 +94,7 @@ DEFAULT_CONFIG = {
         # 视频生成参数（可通过命令行或 config.yaml 覆盖）
         "model": "auto",          # 默认模型，可通过模型接口查询可选值
         "duration": 10,
-        "aspectRatio": "16:9",
+        "aspectRatio": "9:16",
         "variants": 1,
     },
 }
@@ -527,7 +528,7 @@ def generate_video(
     image_urls: str | list[str] | tuple[str, ...],
     system_prompt: str,
     session: requests.Session,
-    aspectRatio: str = "16:9",
+    aspectRatio: str = "9:16",
     duration: int = 10,
     model: str = "auto",
     variants: int = 1,
@@ -888,7 +889,7 @@ def run_workflow(
     # 合并配置：命令行参数 > config.yaml > 默认值
     model = model if model is not None else video_cfg.get("model", "")
     duration = duration if duration is not None else video_cfg.get("duration", 10)
-    aspectRatio = aspectRatio or video_cfg.get("aspectRatio", "16:9")
+    aspectRatio = aspectRatio or video_cfg.get("aspectRatio", "9:16")
     variants = variants if variants is not None else video_cfg.get("variants", 1)
     confirm_before_generate = video_cfg.get("confirm_before_generate", True)
 
@@ -1042,13 +1043,13 @@ def main():
         print("用法:")
         print("  python zhenlongxia_workflow.py <图片路径1> [图片路径2 ...] [选项]")
         print("  python zhenlongxia_workflow.py --list-models [--token=xxx]")
-        print("  python zhenlongxia_workflow.py --list-templates [--mediaType=0] [--tabType=0] [--pageNum=1] [--pageSize=10] [--token=xxx]")
+        print("  python zhenlongxia_workflow.py --list-templates [--mediaType=1] [--tabType=0] [--pageNum=1] [--pageSize=10] [--token=xxx]")
         print()
         print("选项:")
         print("  --token=xxx          Token（也可写入 token.txt）")
         print("  --list-models        查询可用模型、时长与比例")
         print("  --list-templates     先查模板分类，再按 tabType 查询行业模板")
-        print("  --mediaType=N        模板分类 mediaType，默认 0")
+        print("  --mediaType=N        模板分类 mediaType，默认 1")
         print("  --tabType=N          模板 tabType；不传则优先取 tabName=行业模板")
         print("  --pageNum=N          模板分页页码，默认 1")
         print("  --pageSize=N         模板分页大小，默认 10")
@@ -1069,8 +1070,8 @@ def main():
         print("  python zhenlongxia_workflow.py --list-models")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=sora2-new --duration=10")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --model=grok_imagine --duration=10 --aspectRatio=9:16 --variants=1 --yes")
-        print("  python zhenlongxia_workflow.py --list-templates --mediaType=0")
-        print("  python zhenlongxia_workflow.py --list-templates --mediaType=0 --tabType=0")
+        print("  python zhenlongxia_workflow.py --list-templates --mediaType=1")
+        print("  python zhenlongxia_workflow.py --list-templates --mediaType=1 --tabType=0")
         print("  python zhenlongxia_workflow.py ./my_image.jpg --tmpplateId=1001 --title=产品名 --yes")
         print("  python zhenlongxia_workflow.py --id=123456")
         print("  python zhenlongxia_workflow.py --fetch-by-id=123456")
@@ -1087,7 +1088,7 @@ def main():
     variants = None
     page_num = 1
     page_size = 20
-    media_type = 0
+    media_type = 1
     tab_type = None
     tmpplateId = None
     title = None
