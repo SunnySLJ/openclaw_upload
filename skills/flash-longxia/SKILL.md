@@ -1,11 +1,11 @@
 ---
 name: flash-longxia
-description: Generate one video from 1 to 4 local images and query or download completed videos for the zhenlongxia or flash_longxia workflow in this project. Use when the user asks to run this repo's image-to-video pipeline, inspect available models, submit a generation task with up to 4 images, query a task by ID, download a finished video by task ID, or troubleshoot flash-longxia generation and download issues.
+description: Generate one video from 1 to 4 local images and query or download completed videos for the zhenlongxia or flash_longxia workflow in this project. Supports optional industry-template selection before generation. Use when the user asks to run this repo's image-to-video pipeline, inspect available models or industry templates, submit a generation task with up to 4 images, query a task by ID, download a finished video by task ID, or troubleshoot flash-longxia generation and download issues.
 ---
 
 # flash-longxia
 
-使用此 skill 时，优先复用 skill 自带脚本，不要重新实现上传、图生文、模型查询、生成和下载 API。
+使用此 skill 时，优先复用 skill 自带脚本，不要重新实现上传、图生文、模型查询、行业模板查询、生成和下载 API。
 
 ## 定位仓库
 
@@ -26,6 +26,7 @@ description: Generate one video from 1 to 4 local images and query or download c
 
 ```bash
 python3 scripts/generate_video.py --list-models [--token=...]
+python3 scripts/generate_video.py --list-templates [--mediaType=1] [--tabType=...] [--pageNum=1] [--pageSize=10] [--token=...]
 python3 scripts/generate_video.py <image-path> [--model=...] [--duration=10] [--aspectRatio=16:9] [--variants=1] [--token=...]
 python3 scripts/generate_video.py <image1> <image2> [image3] [image4] [--model=...] [--duration=10] [--aspectRatio=16:9] [--variants=1] [--token=...]
 python3 scripts/generate_video.py <image-path> --yes [--token=...]
@@ -36,6 +37,8 @@ python3 scripts/download_video.py <task-id> --check-only [--token=...]
 ## 执行规则
 
 - 先用 `--list-models` 获取可用 `model`、`duration` 和 `aspectRatio`。
+- 需要行业模板时，先调用模板分类接口 `api/v1/aiTemplateCategory/getList`，传 `mediaType=1`；优先选择 `tabName=行业模板` 对应的 `tabType`，再调用 `api/v1/aiTemplate/pageList`，传 `pageNum=1`、`pageSize=10` 和该 `tabType`。
+- 交互式生成时，如果用户选择使用行业模板，先把模板列表展示给用户，再根据用户选择的模板把 `tmpplateId` 和模板 `title` 一起传给 `generateVideo`；如果用户跳过模板，则不要传模板参数。
 - 只传后端模型接口支持的 `model`、`duration`、`aspectRatio` 组合。
 - 保持参数名 `aspectRatio` 为驼峰写法。
 - 不要向请求体加入 `style` 或 `quality`。
